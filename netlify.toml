@@ -1,0 +1,6 @@
+# Netlify build settings for the Next.js frontend (the repo is a monorepo, so point at the subfolder).
+# Environment variables (BACKEND_URL, NEXT_PUBLIC_API_URL, NEXT_PUBLIC_GOOGLE_CLIENT_ID) are set in the
+# Netlify dashboard, NOT here — see docs/deploy-free.md.
+[build]
+  base = "sweetshop-frontend"
+  command = "npm run build"

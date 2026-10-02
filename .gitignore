@@ -1,0 +1,9 @@
+# Claude Code local project state (machine-specific, never shared)
+.claude/
+
+# Stray crash dumps
+*.stackdump
+
+# Local environment overrides (copy .env.example instead)
+.env
+.env.local
