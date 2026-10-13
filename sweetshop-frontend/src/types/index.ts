@@ -96,6 +96,8 @@ export interface UserProfile {
   phoneNumber: string | null;
   role: Role;
   createdAt: string;
+  /** false for Google sign-in accounts (no password to change) */
+  passwordSet: boolean;
 }
 
 export interface ShopSettings {
