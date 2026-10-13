@@ -1,50 +1,65 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { ShopSettings } from "@/types";
+import Link from "next/link";
+import { DEFAULT_SHOP_NAME, useShopSettings } from "@/lib/shopSettings";
 
 export default function ContactPage() {
-  const [settings, setSettings] = useState<ShopSettings | null>(null);
-
-  useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings").then(setSettings).catch(() => {});
-  }, []);
+  const settings = useShopSettings();
+  const phoneDigits = settings?.contactPhone?.replace(/[^\d+]/g, "");
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-amber-900">Contact Us</h1>
+      <h1 className="page-title mb-6">Contact us</h1>
 
-      <div className="rounded-lg border border-gray-200 p-5">
-        <p className="text-lg font-semibold text-gray-900">{settings?.shopName ?? "KING CAKE PLACE"}</p>
-        {settings?.description && <p className="mt-1 text-sm text-gray-600">{settings.description}</p>}
+      <div className="card md:p-8">
+        <p className="font-display text-xl text-ink">{settings?.shopName ?? DEFAULT_SHOP_NAME}</p>
+        {settings?.description && <p className="mt-1 text-sm text-charcoal/70">{settings.description}</p>}
 
-        <div className="mt-4 flex flex-col gap-2 text-sm text-gray-700">
-          {settings?.address ? (
-            <p>📍 {settings.address}</p>
-          ) : (
-            <p className="text-gray-400">Shop address not added yet.</p>
+        <dl className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-charcoal/50">Visit</dt>
+            <dd className="mt-1 text-ink">{settings?.address ?? <span className="text-charcoal/40">Address coming soon</span>}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-charcoal/50">Call</dt>
+            <dd className="mt-1 text-ink">{settings?.contactPhone ?? <span className="text-charcoal/40">Phone coming soon</span>}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-charcoal/50">Email</dt>
+            <dd className="mt-1 break-words text-ink">{settings?.email ?? <span className="text-charcoal/40">Email coming soon</span>}</dd>
+          </div>
+        </dl>
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          {phoneDigits && (
+            <a href={`tel:${phoneDigits}`} className="btn-primary">
+              Call the shop
+            </a>
           )}
-          {settings?.contactPhone ? (
-            <p>
-              📞 <a href={`tel:${settings.contactPhone}`} className="text-amber-700 hover:underline">{settings.contactPhone}</a>
-            </p>
-          ) : (
-            <p className="text-gray-400">Phone number not added yet.</p>
+          {settings?.email && (
+            <a href={`mailto:${settings.email}`} className="btn-secondary">
+              Send an email
+            </a>
           )}
-          {settings?.email ? (
-            <p>
-              ✉️ <a href={`mailto:${settings.email}`} className="text-amber-700 hover:underline">{settings.email}</a>
-            </p>
-          ) : (
-            <p className="text-gray-400">Email not added yet.</p>
+          {settings?.address && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(settings.address)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary"
+            >
+              Open in Maps
+            </a>
           )}
         </div>
       </div>
 
-      <p className="mt-6 text-sm text-gray-500">
+      <p className="mt-6 text-sm text-charcoal/70">
         Already placed an order? The fastest way to reach us about it is the message thread on your{" "}
-        <a href="/orders" className="text-amber-700 hover:underline">order&apos;s page</a> — we&apos;ll see it right away.
+        <Link href="/orders" className="font-medium text-plum hover:underline">
+          order&apos;s page
+        </Link>{" "}
+        — we&apos;ll see it right away.
       </p>
     </div>
   );

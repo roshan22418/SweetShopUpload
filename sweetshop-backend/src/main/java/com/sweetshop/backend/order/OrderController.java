@@ -52,6 +52,11 @@ public class OrderController {
         return orderService.getOrderById(id, principal.getId(), isAdmin);
     }
 
+    @PostMapping("/{id}/cancel")
+    public OrderResponse cancel(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return orderService.cancelByCustomer(id, principal.getId());
+    }
+
     @PatchMapping("/{id}/status")
     public OrderResponse updateStatus(@PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
         return orderService.updateStatus(id, request.getStatus());

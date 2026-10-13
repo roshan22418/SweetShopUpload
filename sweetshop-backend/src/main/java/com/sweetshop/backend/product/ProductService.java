@@ -27,14 +27,16 @@ public class ProductService {
     // it stays in the database (order history depends on it), it just never leaves this
     // service for a non-admin caller.
     public List<ProductResponse> getAll(boolean includeHidden) {
-        List<Product> products = includeHidden ? productRepository.findAll() : productRepository.findByIsAvailableTrue();
+        List<Product> products = includeHidden
+                ? productRepository.findAllByOrderByNameAsc()
+                : productRepository.findByIsAvailableTrueOrderByNameAsc();
         return products.stream().map(ProductResponse::from).toList();
     }
 
     public List<ProductResponse> getByCategory(Long categoryId, boolean includeHidden) {
         List<Product> products = includeHidden
-                ? productRepository.findByCategoryId(categoryId)
-                : productRepository.findByCategoryIdAndIsAvailableTrue(categoryId);
+                ? productRepository.findByCategoryIdOrderByNameAsc(categoryId)
+                : productRepository.findByCategoryIdAndIsAvailableTrueOrderByNameAsc(categoryId);
         return products.stream().map(ProductResponse::from).toList();
     }
 

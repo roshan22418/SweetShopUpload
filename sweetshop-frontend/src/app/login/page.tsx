@@ -38,34 +38,46 @@ function LoginForm() {
       <p className="mb-6 text-sm text-charcoal/60">Login to order from KING CAKE PLACE.</p>
       <GoogleAuthSection redirect={redirect} text="signin_with" />
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p className="alert-error" role="alert">
+            {error}
+          </p>
+        )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">Email</label>
+          <label htmlFor="email" className="field-label">
+            Email
+          </label>
           <input
+            id="email"
             type="email"
+            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">Password</label>
+          <label htmlFor="password" className="field-label">
+            Password
+          </label>
           <input
+            id="password"
             type="password"
+            autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
         </div>
 
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-gold px-4 py-2 font-semibold text-ink shadow-sm transition hover:bg-gold-light disabled:opacity-50"
+          className="btn-primary py-2.5"
         >
           {submitting ? "Logging in..." : "Login"}
         </button>

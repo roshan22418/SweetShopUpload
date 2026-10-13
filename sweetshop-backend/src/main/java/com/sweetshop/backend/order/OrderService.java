@@ -4,9 +4,11 @@ import com.sweetshop.backend.cart.CartItem;
 import com.sweetshop.backend.cart.CartItemRepository;
 import com.sweetshop.backend.order.dto.CheckoutRequest;
 import com.sweetshop.backend.order.dto.OrderResponse;
+import com.sweetshop.backend.notification.OrderCancelledEvent;
 import com.sweetshop.backend.notification.OrderMessageFormatter;
 import com.sweetshop.backend.notification.OrderPlacedEvent;
-import com.sweetshop.backend.payment.RazorpayService;
+import com.sweetshop.backend.payment.PaymentService;
+import com.sweetshop.backend.payment.RazorpayPayment;
 import com.sweetshop.backend.product.Product;
 import com.sweetshop.backend.product.ProductRepository;
 import com.sweetshop.backend.user.UserRepository;
@@ -18,6 +20,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -27,7 +30,7 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final RazorpayService razorpayService;
+    private final PaymentService paymentService;
     private final ApplicationEventPublisher eventPublisher;
 
     public OrderService(
@@ -35,14 +38,14 @@ public class OrderService {
             CartItemRepository cartItemRepository,
             ProductRepository productRepository,
             UserRepository userRepository,
-            RazorpayService razorpayService,
+            PaymentService paymentService,
             ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.razorpayService = razorpayService;
+        this.paymentService = paymentService;
     }
 
     @Transactional
@@ -54,18 +57,11 @@ public class OrderService {
 
         PaymentMethod paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : PaymentMethod.COD;
 
-        if (paymentMethod == PaymentMethod.RAZORPAY) {
-            if (!StringUtils.hasText(request.getRazorpayOrderId())
-                    || !StringUtils.hasText(request.getRazorpayPaymentId())
-                    || !StringUtils.hasText(request.getRazorpaySignature())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment details are required for online payment");
-            }
-            boolean valid = razorpayService.verifySignature(
-                    request.getRazorpayOrderId(), request.getRazorpayPaymentId(), request.getRazorpaySignature());
-            if (!valid) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment verification failed");
-            }
-        }
+        // Checked before touching stock or the cart; any later failure rolls the whole checkout back.
+        RazorpayPayment payment = paymentMethod == PaymentMethod.RAZORPAY
+                ? paymentService.claim(userId, request.getRazorpayOrderId(),
+                        request.getRazorpayPaymentId(), request.getRazorpaySignature())
+                : null;
 
         List<CartItem> cartItems = cartItemRepository.findByUserId(userId);
         if (cartItems.isEmpty()) {
@@ -88,10 +84,20 @@ public class OrderService {
 
         BigDecimal total = BigDecimal.ZERO;
 
-        for (CartItem cartItem : cartItems) {
-            Product product = productRepository.findById(cartItem.getProduct().getId())
+        // Lock rows in a fixed (id) order so two checkouts sharing products can't deadlock each other.
+        List<CartItem> lines = cartItems.stream()
+                .sorted(Comparator.comparing(cartItem -> cartItem.getProduct().getId()))
+                .toList();
+
+        for (CartItem cartItem : lines) {
+            Product product = productRepository.findByIdForUpdate(cartItem.getProduct().getId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                            "Product no longer exists: " + cartItem.getProduct().getName()));
+                            "A product in your cart no longer exists — please remove it"));
+
+            if (!Boolean.TRUE.equals(product.getIsAvailable())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        product.getName() + " is no longer available — please remove it from your cart");
+            }
 
             if (cartItem.getQuantity() > product.getStockQuantity()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -115,6 +121,10 @@ public class OrderService {
 
         order.setTotalAmount(total);
         Order saved = orderRepository.save(order);
+
+        if (payment != null) {
+            paymentService.complete(payment, total, saved);
+        }
 
         cartItemRepository.deleteByUserId(userId);
 
@@ -149,8 +159,56 @@ public class OrderService {
     @Transactional
     public OrderResponse updateStatus(Long orderId, OrderStatus newStatus) {
         Order order = findEntityById(orderId);
+        if (order.getStatus() == newStatus) {
+            return OrderResponse.from(order);
+        }
+        if (!order.getStatus().canTransitionTo(newStatus)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Order #" + orderId + " is " + order.getStatus() + " and can't be changed to " + newStatus);
+        }
+        if (newStatus == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
         order.setStatus(newStatus);
         return OrderResponse.from(orderRepository.save(order));
+    }
+
+    /**
+     * Self-service cancel, only while the shop hasn't confirmed the order yet. Online-paid orders need a
+     * refund, so those go through the shop (order messages / contact page) instead.
+     */
+    @Transactional
+    public OrderResponse cancelByCustomer(Long orderId, Long customerId) {
+        Order order = findEntityById(orderId);
+        if (!order.getUser().getId().equals(customerId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This order is already " + order.getStatus().name().toLowerCase()
+                            + " — please message the shop if you need to change it");
+        }
+        if (order.getPaymentMethod() == PaymentMethod.RAZORPAY) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This order was paid online — please message the shop to cancel it and arrange your refund");
+        }
+
+        restoreStock(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        Order saved = orderRepository.save(order);
+        eventPublisher.publishEvent(new OrderCancelledEvent(saved.getId(), OrderMessageFormatter.cancelledByCustomer(saved)));
+        return OrderResponse.from(saved);
+    }
+
+    // Same lock order as checkout (product id), so a cancel and a checkout can't deadlock.
+    private void restoreStock(Order order) {
+        order.getItems().stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .forEach(item -> {
+                    Product product = productRepository.findByIdForUpdate(item.getProduct().getId()).orElseThrow();
+                    product.setStockQuantity(product.getStockQuantity() + item.getQuantity());
+                    productRepository.save(product);
+                });
     }
 
     private Order findEntityById(Long orderId) {

@@ -3,6 +3,7 @@ package com.sweetshop.backend.category;
 import com.sweetshop.backend.category.dto.CategoryRequest;
 import com.sweetshop.backend.category.dto.CategoryResponse;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -19,7 +20,7 @@ public class CategoryService {
     }
 
     public List<CategoryResponse> getAll() {
-        return categoryRepository.findAll().stream()
+        return categoryRepository.findAll(Sort.by("name")).stream()
                 .map(CategoryResponse::from)
                 .toList();
     }

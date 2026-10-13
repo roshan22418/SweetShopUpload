@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { Category, ShopSettings } from "@/types";
+import { Category } from "@/types";
+import { DEFAULT_SHOP_NAME, useShopSettings } from "@/lib/shopSettings";
 import { useAuth } from "@/context/AuthContext";
 import CrownMark from "@/components/CrownMark";
 import { emojiFor, taglineFor } from "@/lib/categoryDisplay";
@@ -17,19 +17,13 @@ interface HeroProps {
 
 export default function Hero({ categories, onSelectCategory }: HeroProps) {
   const { user } = useAuth();
-  const [shopName, setShopName] = useState("KING CAKE PLACE");
+  const shopName = useShopSettings()?.shopName ?? DEFAULT_SHOP_NAME;
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
 
   const categorySlides = categories.slice(0, MAX_CATEGORY_SLIDES);
   const slideCount = 1 + categorySlides.length;
-
-  useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings")
-      .then((settings) => setShopName(settings.shopName))
-      .catch(() => {});
-  }, []);
 
   function goTo(index: number) {
     const next = (index + slideCount) % slideCount;

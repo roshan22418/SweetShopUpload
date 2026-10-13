@@ -43,7 +43,8 @@ class AuthServiceGoogleLoginTest {
         when(refreshTokenService.create(any(User.class))).thenReturn("raw-refresh-token");
 
         authService = new AuthService(userRepository, new BCryptPasswordEncoder(), jwtService,
-                mock(AuthenticationManager.class), refreshTokenService, googleVerifier);
+                mock(AuthenticationManager.class), refreshTokenService, googleVerifier,
+                new LoginAttemptService(5, 15));
     }
 
     private GoogleLoginRequest request() {
@@ -56,7 +57,7 @@ class AuthServiceGoogleLoginTest {
     void newGoogleUserIsCreatedAsCustomerWithoutUsablePassword() {
         when(googleVerifier.verify("fake-id-token"))
                 .thenReturn(new GoogleIdentity("new@gmail.com", true, "New Person"));
-        when(userRepository.findByEmail("new@gmail.com")).thenReturn(Optional.empty());
+        when(userRepository.findByLoginEmail("new@gmail.com")).thenReturn(Optional.empty());
 
         AuthResult result = authService.googleLogin(request());
 
@@ -72,7 +73,7 @@ class AuthServiceGoogleLoginTest {
     void newGoogleUserIsMarkedPasswordNotSet() {
         when(googleVerifier.verify("fake-id-token"))
                 .thenReturn(new GoogleIdentity("new@gmail.com", true, null));
-        when(userRepository.findByEmail("new@gmail.com")).thenReturn(Optional.empty());
+        when(userRepository.findByLoginEmail("new@gmail.com")).thenReturn(Optional.empty());
 
         AuthResult result = authService.googleLogin(request());
 
@@ -90,7 +91,7 @@ class AuthServiceGoogleLoginTest {
                 .passwordHash("hash").role(Role.ADMIN).build();
         when(googleVerifier.verify("fake-id-token"))
                 .thenReturn(new GoogleIdentity("old@gmail.com", true, "Google Name"));
-        when(userRepository.findByEmail("old@gmail.com")).thenReturn(Optional.of(existing));
+        when(userRepository.findByLoginEmail("old@gmail.com")).thenReturn(Optional.of(existing));
 
         AuthResult result = authService.googleLogin(request());
 
@@ -121,5 +122,16 @@ class AuthServiceGoogleLoginTest {
 
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void googleEmailIsNormalizedBeforeLookupAndStorage() {
+        when(googleVerifier.verify("fake-id-token"))
+                .thenReturn(new GoogleIdentity("Mixed.Case@Gmail.com", true, "Mixed"));
+        when(userRepository.findByLoginEmail("mixed.case@gmail.com")).thenReturn(Optional.empty());
+
+        AuthResult result = authService.googleLogin(request());
+
+        assertEquals("mixed.case@gmail.com", result.response().getEmail());
     }
 }

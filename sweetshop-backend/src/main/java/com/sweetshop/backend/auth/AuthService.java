@@ -26,6 +26,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
     private final GoogleTokenVerifier googleTokenVerifier;
+    private final LoginAttemptService loginAttempts;
 
     public AuthService(
             UserRepository userRepository,
@@ -33,8 +34,10 @@ public class AuthService {
             JwtService jwtService,
             AuthenticationManager authenticationManager,
             RefreshTokenService refreshTokenService,
-            GoogleTokenVerifier googleTokenVerifier) {
+            GoogleTokenVerifier googleTokenVerifier,
+            LoginAttemptService loginAttempts) {
         this.googleTokenVerifier = googleTokenVerifier;
+        this.loginAttempts = loginAttempts;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -43,13 +46,14 @@ public class AuthService {
     }
 
     public AuthResult register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String email = UserRepository.normalizeEmail(request.getEmail());
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
 
         User user = User.builder()
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .email(email)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .phoneNumber(request.getPhoneNumber())
                 .role(Role.CUSTOMER)
@@ -61,14 +65,17 @@ public class AuthService {
     }
 
     public AuthResult login(LoginRequest request) {
+        String email = UserRepository.normalizeEmail(request.getEmail());
+        loginAttempts.checkAllowed(email);
         try {
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
+            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, request.getPassword()));
         } catch (BadCredentialsException e) {
+            loginAttempts.recordFailure(email);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
+        loginAttempts.recordSuccess(email);
 
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findByLoginEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
         return issueTokens(user);
@@ -85,14 +92,15 @@ public class AuthService {
         if (identity.email() == null || !identity.emailVerified()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Your Google email is not verified");
         }
+        String email = UserRepository.normalizeEmail(identity.email());
 
-        User user = userRepository.findByEmail(identity.email()).orElseGet(() -> {
+        User user = userRepository.findByLoginEmail(email).orElseGet(() -> {
             String fullName = (identity.name() != null && !identity.name().isBlank())
                     ? identity.name()
-                    : identity.email().substring(0, identity.email().indexOf('@'));
+                    : email.substring(0, email.indexOf('@'));
             return userRepository.save(User.builder()
-                    .fullName(fullName)
-                    .email(identity.email())
+                    .fullName(fullName.length() > 150 ? fullName.substring(0, 150) : fullName)
+                    .email(email)
                     // random, never-revealed password: nobody can log in with it via the password form
                     .passwordHash(passwordEncoder.encode(UUID.randomUUID() + UUID.randomUUID().toString()))
                     .passwordSet(false)

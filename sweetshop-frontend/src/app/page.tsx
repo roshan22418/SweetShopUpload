@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { formatPrice } from "@/lib/format";
 import { apiFetch, resolveImageUrl } from "@/lib/api";
 import { Category, Product, ReviewSummary } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { matchesSearch } from "@/lib/search";
+import { isOrderable } from "@/lib/chatbot";
 import { playPopSound } from "@/lib/sound";
 import { emojiFor } from "@/lib/categoryDisplay";
 import SearchBar from "@/components/SearchBar";
@@ -80,6 +82,14 @@ const HOW_IT_WORKS = [
   { title: "Pick up or get it delivered", text: "Dine-in, takeaway, or delivery to your door." },
 ];
 
+type SortOrder = "name" | "price-asc" | "price-desc";
+
+function sortProducts(products: Product[], order: SortOrder): Product[] {
+  if (order === "name") return products; // the API already returns products by name
+  const sorted = [...products].sort((a, b) => a.price - b.price);
+  return order === "price-asc" ? sorted : sorted.reverse();
+}
+
 interface ProductCardProps {
   product: Product;
   qty: number;
@@ -116,7 +126,7 @@ function ProductCard({ product: p, qty, busy, rating, onIncrement, onDecrement }
       </Link>
       <div className="flex items-center justify-between px-4 pb-4">
         <div>
-          <span className="font-semibold text-ink">₹{p.price}</span>
+          <span className="font-semibold text-ink">{formatPrice(p.price)}</span>
           <span className="ml-1 text-xs text-charcoal/50">/ {p.unit}</span>
         </div>
         {qty > 0 ? (
@@ -131,14 +141,14 @@ function ProductCard({ product: p, qty, busy, rating, onIncrement, onDecrement }
           <button
             disabled={!p.isAvailable || p.stockQuantity <= 0 || busy}
             onClick={onIncrement}
-            className="rounded-md bg-gold px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-gold-light disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-primary px-3 py-1.5"
           >
-            {!p.isAvailable ? "Unavailable" : p.stockQuantity <= 0 ? "Out of Stock" : busy ? "Adding..." : "Add to Cart"}
+            {!p.isAvailable ? "Unavailable" : p.stockQuantity <= 0 ? "Out of stock" : busy ? "Adding..." : "Add to cart"}
           </button>
         )}
       </div>
-      {p.stockQuantity <= 5 && p.isAvailable && (
-        <p className="px-4 pb-3 -mt-2 text-xs text-plum">Only {p.stockQuantity} left</p>
+      {p.isAvailable && p.stockQuantity > 0 && p.stockQuantity <= 5 && (
+        <p className="-mt-2 px-4 pb-3 text-xs text-plum">Only {p.stockQuantity} left</p>
       )}
     </div>
   );
@@ -147,13 +157,18 @@ function ProductCard({ product: p, qty, busy, rating, onIncrement, onDecrement }
 export default function HomePage() {
   const { user } = useAuth();
   const { getQuantity, incrementItem, decrementItem } = useCart();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[] | null>(null);
   const [featured, setFeatured] = useState<Product[]>([]);
   const [ratings, setRatings] = useState<Record<number, ReviewSummary>>({});
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState("");
+  // Typing stays instant; filtering the list follows a beat behind without blocking the input.
+  const searchQuery = useDeferredValue(searchInput);
+  const [sort, setSort] = useState<SortOrder>("name");
+  const [inStockOnly, setInStockOnly] = useState(false);
+  // Results are remembered with the request they answer, so a slow response for an old category can
+  // never overwrite the current one, and "loading" is simply "the current request hasn't answered yet".
+  const [listing, setListing] = useState<{ path: string; products: Product[] } | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const listingRef = useRef<HTMLDivElement>(null);
@@ -162,8 +177,11 @@ export default function HomePage() {
   // Categories and a small product preview are public endpoints — shown to
   // guests and logged-in shoppers alike, not gated behind an account.
   useEffect(() => {
-    apiFetch<Category[]>("/api/categories").then(setCategories).catch(() => {});
-    apiFetch<Product[]>("/api/products").then((all) => setFeatured(all.slice(0, 6))).catch(() => {});
+    apiFetch<Category[]>("/api/categories").then(setCategories).catch(() => setCategories([]));
+    // Newest things you can actually order right now — never an out-of-stock item in the showcase.
+    apiFetch<Product[]>("/api/products")
+      .then((all) => setFeatured(all.filter(isOrderable).sort((a, b) => b.id - a.id).slice(0, 6)))
+      .catch(() => {});
   }, []);
 
   // Real star ratings for just the featured six, not the whole catalog —
@@ -186,19 +204,30 @@ export default function HomePage() {
     });
   }, [featured]);
 
+  // Browsing by category tile, no search: nothing to fetch until a category is picked. Searching filters
+  // client-side, so typing doesn't refetch — only switching category does.
+  const listingPath =
+    selectedCategoryId !== null
+      ? `/api/products?categoryId=${selectedCategoryId}`
+      : searchQuery.trim()
+        ? "/api/products"
+        : null;
+
   useEffect(() => {
-    // Browsing by category tile, no search: don't fetch anything until a category is picked.
-    if (selectedCategoryId === null && !searchQuery) {
-      setProducts([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const path = selectedCategoryId ? `/api/products?categoryId=${selectedCategoryId}` : "/api/products";
-    apiFetch<Product[]>(path)
-      .then(setProducts)
-      .finally(() => setLoading(false));
-  }, [selectedCategoryId, searchQuery]);
+    if (!listingPath) return;
+    let cancelled = false;
+    apiFetch<Product[]>(listingPath)
+      .catch(() => [] as Product[])
+      .then((products) => {
+        if (!cancelled) setListing({ path: listingPath, products });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listingPath]);
+
+  const loading = listingPath !== null && listing?.path !== listingPath;
+  const products = listing?.path === listingPath ? listing.products : [];
 
   const showingCategoryOrSearch = selectedCategoryId !== null || searchQuery.trim() !== "";
 
@@ -244,20 +273,28 @@ export default function HomePage() {
     track.scrollBy({ left: direction * amount, behavior: "smooth" });
   }
 
-  const visibleProducts = products.filter((p) => matchesSearch(p, searchQuery));
-  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const visibleProducts = sortProducts(
+    products.filter((p) => matchesSearch(p, searchQuery) && (!inStockOnly || isOrderable(p))),
+    sort
+  );
+  const selectedCategory = categories?.find((c) => c.id === selectedCategoryId);
+
+  function showAllCategories() {
+    setSelectedCategoryId(null);
+    setSearchInput("");
+  }
 
   return (
     <div>
       <AnnouncementTicker />
-      <Hero categories={categories} onSelectCategory={setSelectedCategoryId} />
+      <Hero categories={categories ?? []} onSelectCategory={setSelectedCategoryId} />
 
       {message && (
         <div className="mb-4 rounded-md bg-gold-light/40 px-4 py-2 text-sm font-medium text-ink">{message}</div>
       )}
 
       <div className="mb-8">
-        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        <SearchBar value={searchInput} onChange={setSearchInput} />
       </div>
 
       {!showingCategoryOrSearch ? (
@@ -265,7 +302,13 @@ export default function HomePage() {
           {/* --- Category tiles: the default view for everyone --- */}
           <section>
             <h1 className="mb-4 font-[family-name:var(--font-display)] text-xl font-medium text-ink">Shop by category</h1>
-            {categories.length === 0 ? (
+            {categories === null ? (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" aria-busy="true">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-36 animate-pulse rounded-xl border border-gold-light/40 bg-gold-light/20" />
+                ))}
+              </div>
+            ) : categories.length === 0 ? (
               <p className="text-charcoal/60">No categories yet.</p>
             ) : (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -391,46 +434,62 @@ export default function HomePage() {
         </div>
       ) : (
         // --- Products: inside a category, or a search result ---
-        <div ref={listingRef}>
+        <div ref={listingRef} className="scroll-mt-24">
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => {
-                setSelectedCategoryId(null);
-                setSearchQuery("");
-              }}
-              className="text-sm font-medium text-plum hover:underline"
-            >
+            <button onClick={showAllCategories} className="text-sm font-medium text-plum hover:underline">
               ← All categories
             </button>
-            <h2 className="font-[family-name:var(--font-display)] text-xl font-medium text-ink">
-              {searchQuery.trim() ? `Search results for "${searchQuery}"` : selectedCategory?.name}
+            <h2 className="font-display text-xl font-medium text-ink">
+              {searchQuery.trim() ? `Results for “${searchQuery.trim()}”` : selectedCategory?.name}
             </h2>
           </div>
 
-          <div className="mb-6 flex flex-wrap gap-2">
-            <button
-              onClick={() => setSelectedCategoryId(null)}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                selectedCategoryId === null
-                  ? "bg-ink text-cream"
-                  : "bg-gold-light/30 text-ink hover:bg-gold-light/50"
-              }`}
-            >
-              All
-            </button>
-            {categories.map((c) => (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
               <button
-                key={c.id}
-                onClick={() => setSelectedCategoryId(c.id)}
+                onClick={() => setSelectedCategoryId(null)}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                  selectedCategoryId === c.id
-                    ? "bg-ink text-cream"
-                    : "bg-gold-light/30 text-ink hover:bg-gold-light/50"
+                  selectedCategoryId === null ? "bg-ink text-cream" : "bg-gold-light/30 text-ink hover:bg-gold-light/50"
                 }`}
               >
-                {c.name}
+                All
               </button>
-            ))}
+              {(categories ?? []).map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCategoryId(c.id)}
+                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                    selectedCategoryId === c.id ? "bg-ink text-cream" : "bg-gold-light/30 text-ink hover:bg-gold-light/50"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <label className="flex items-center gap-2 text-charcoal/80">
+                <input
+                  type="checkbox"
+                  checked={inStockOnly}
+                  onChange={(e) => setInStockOnly(e.target.checked)}
+                  className="h-4 w-4 accent-gold"
+                />
+                In stock only
+              </label>
+              <label className="sr-only" htmlFor="product-sort">
+                Sort products
+              </label>
+              <select
+                id="product-sort"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOrder)}
+                className="field w-auto py-1.5"
+              >
+                <option value="name">Name (A–Z)</option>
+                <option value="price-asc">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
+              </select>
+            </div>
           </div>
 
           {loading ? (

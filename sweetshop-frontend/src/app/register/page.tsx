@@ -47,58 +47,89 @@ function RegisterForm() {
       <p className="mb-6 text-sm text-charcoal/60">Join KING CAKE PLACE to start ordering.</p>
       <GoogleAuthSection redirect={redirect} text="signup_with" />
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && (
+          <p className="alert-error" role="alert">
+            {error}
+          </p>
+        )}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">Full name</label>
+          <label htmlFor="fullName" className="field-label">
+            Full name
+          </label>
           <input
+            id="fullName"
             required
+            maxLength={150}
+            autoComplete="name"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
           {fieldErrors.fullName && <p className="mt-1 text-xs text-red-600">{fieldErrors.fullName}</p>}
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">Email</label>
+          <label htmlFor="email" className="field-label">
+            Email
+          </label>
           <input
+            id="email"
             type="email"
+            maxLength={255}
+            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
           {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">Password</label>
+          <label htmlFor="password" className="field-label">
+            Password
+          </label>
           <input
+            id="password"
             type="password"
             required
+            minLength={8}
+            maxLength={72}
+            autoComplete="new-password"
+            aria-describedby="password-hint"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
-          {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
+          {fieldErrors.password ? (
+            <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>
+          ) : (
+            <p id="password-hint" className="mt-1 text-xs text-charcoal/50">
+              8–72 characters.
+            </p>
+          )}
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-charcoal/80">
+          <label htmlFor="phoneNumber" className="field-label">
             Phone number <span className="text-charcoal/40">(optional)</span>
           </label>
           <input
+            id="phoneNumber"
+            type="tel"
+            maxLength={20}
+            autoComplete="tel"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
-            className="w-full rounded-md border border-gold-light px-3 py-2 transition focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold"
+            className="field"
           />
         </div>
 
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-gold px-4 py-2 font-semibold text-ink shadow-sm transition hover:bg-gold-light disabled:opacity-50"
+          className="btn-primary py-2.5"
         >
           {submitting ? "Creating account..." : "Register"}
         </button>

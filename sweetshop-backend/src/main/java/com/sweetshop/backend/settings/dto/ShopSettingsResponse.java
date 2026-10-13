@@ -12,13 +12,16 @@ public class ShopSettingsResponse {
     private String contactPhone;
     private String address;
     private String email;
+    // Not stored: true when Razorpay keys are configured, so the checkout only offers payments that can work.
+    private boolean onlinePaymentEnabled;
 
-    public static ShopSettingsResponse from(ShopSettings settings) {
+    public static ShopSettingsResponse from(ShopSettings settings, boolean onlinePaymentEnabled) {
         return new ShopSettingsResponse(
                 settings.getShopName(),
                 settings.getDescription(),
                 settings.getContactPhone(),
                 settings.getAddress(),
-                settings.getEmail());
+                settings.getEmail(),
+                onlinePaymentEnabled);
     }
 }

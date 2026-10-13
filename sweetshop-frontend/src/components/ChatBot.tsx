@@ -9,7 +9,6 @@ import { useCart } from "@/context/CartContext";
 import {
   MAX_QUANTITY,
   detectIntent,
-  formatRupees,
   isOrderable,
   isValidAddress,
   normalizePhone,
@@ -17,6 +16,7 @@ import {
   parseQuantity,
   searchProducts,
 } from "@/lib/chatbot";
+import { FULFILLMENT_LABELS, formatPrice } from "@/lib/format";
 
 // A guided, rule-based ordering assistant: buttons for the main path, plus typed shortcuts
 // ("2 samosas", "cart", "checkout"). It only calls the same endpoints the website pages use, so
@@ -52,12 +52,6 @@ const MENU_OPTIONS: Opt[] = [
   { label: "📦 My orders", value: "orders" },
   { label: "❓ Help", value: "help" },
 ];
-
-const FULFILLMENT_LABELS: Record<FulfillmentType, string> = {
-  DINE_IN: "Dine in",
-  TAKEAWAY: "Takeaway",
-  DELIVERY: "Delivery",
-};
 
 const YES = /^(yes|y|yep|yeah|ok|okay|confirm|sure|place order|place my order|confirm order)$/i;
 const NO = /^(no|n|cancel|stop|nope)$/i;
@@ -161,7 +155,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
       return;
     }
     bot("Here's what's available — tap one to add it:", [
-      ...products.map((p) => ({ label: `${p.name} (${p.unit}) — ${formatRupees(p.price)}`, value: `prod:${p.id}` })),
+      ...products.map((p) => ({ label: `${p.name} (${p.unit}) — ${formatPrice(p.price)}`, value: `prod:${p.id}` })),
       { label: "⬅ Other categories", value: "order" },
     ]);
   }
@@ -172,7 +166,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
     const max = Math.min(product.stockQuantity, MAX_QUANTITY);
     const quick = [1, 2, 3, 5, 10].filter((n) => n <= max);
     bot(
-      `How many ${product.name}? It's ${formatRupees(product.price)} each (${product.stockQuantity} in stock). Tap a number or type one.`,
+      `How many ${product.name}? It's ${formatPrice(product.price)} each (${product.stockQuantity} in stock). Tap a number or type one.`,
       quick.map((n) => ({ label: String(n), value: `qty:${n}` }))
     );
   }
@@ -196,7 +190,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
 
     const cart = await incrementItem(product, quantity);
     resetFlow();
-    bot(`✅ Added ${quantity} × ${product.name}. Your cart total is ${formatRupees(cart?.totalAmount ?? 0)}.`, [
+    bot(`✅ Added ${quantity} × ${product.name}. Your cart total is ${formatPrice(cart?.totalAmount ?? 0)}.`, [
       { label: "➕ Add more", value: "order" },
       { label: "🛒 View cart", value: "cart" },
       { label: "✅ Checkout", value: "checkout" },
@@ -223,8 +217,8 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
       ]);
       return;
     }
-    const lines = cart.items.map((i) => `• ${i.quantity} × ${i.productName} — ${formatRupees(i.subtotal)}`);
-    bot(`🛒 Your cart:\n${lines.join("\n")}\n\nTotal: ${formatRupees(cart.totalAmount)}`, [
+    const lines = cart.items.map((i) => `• ${i.quantity} × ${i.productName} — ${formatPrice(i.subtotal)}`);
+    bot(`🛒 Your cart:\n${lines.join("\n")}\n\nTotal: ${formatPrice(cart.totalAmount)}`, [
       { label: "✅ Checkout", value: "checkout" },
       { label: "➕ Add more", value: "order" },
       { label: "🗑️ Clear cart", value: "clear" },
@@ -249,7 +243,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
       return;
     }
     const count = cart.items.reduce((sum, i) => sum + i.quantity, 0);
-    bot(`Let's place your order — ${count} item${count === 1 ? "" : "s"}, ${formatRupees(cart.totalAmount)}. How would you like to get it?`, [
+    bot(`Let's place your order — ${count} item${count === 1 ? "" : "s"}, ${formatPrice(cart.totalAmount)}. How would you like to get it?`, [
       { label: "🍽️ Dine in", value: "ful:DINE_IN" },
       { label: "🛍️ Takeaway", value: "ful:TAKEAWAY" },
       { label: "🚚 Delivery", value: "ful:DELIVERY" },
@@ -284,14 +278,14 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
       return;
     }
     const d = draft.current;
-    const lines = cart.items.map((i) => `• ${i.quantity} × ${i.productName} — ${formatRupees(i.subtotal)}`);
+    const lines = cart.items.map((i) => `• ${i.quantity} × ${i.productName} — ${formatPrice(i.subtotal)}`);
     setStep("confirm");
     bot(
       [
         "Please check your order:",
         ...lines,
         "",
-        `Total: ${formatRupees(cart.totalAmount)}`,
+        `Total: ${formatPrice(cart.totalAmount)}`,
         `Type: ${FULFILLMENT_LABELS[d.fulfillment!]}`,
         ...(d.fulfillment === "DELIVERY" ? [`Address: ${d.address}`] : []),
         `Phone: ${d.phone}`,
@@ -329,7 +323,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
     resetFlow();
     await refreshCart();
     bot(
-      `🎉 Order #${order.id} placed! Total ${formatRupees(order.totalAmount)}, pay at counter / on delivery. The shop will confirm it shortly.`,
+      `🎉 Order #${order.id} placed! Total ${formatPrice(order.totalAmount)}, pay at counter / on delivery. The shop will confirm it shortly.`,
       [
         { label: "🛍️ Order more", value: "order" },
         { label: "📦 My orders", value: "orders" },
@@ -347,7 +341,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
     }
     const lines = orders
       .slice(0, 3)
-      .map((o) => `#${o.id} · ${o.status.toLowerCase()} · ${formatRupees(o.totalAmount)} · ${FULFILLMENT_LABELS[o.fulfillmentType]}`);
+      .map((o) => `#${o.id} · ${o.status.toLowerCase()} · ${formatPrice(o.totalAmount)} · ${FULFILLMENT_LABELS[o.fulfillmentType]}`);
     bot(`Your latest orders:\n${lines.join("\n")}`, MENU_OPTIONS, { label: "See all my orders", href: "/orders" });
   }
 
@@ -505,7 +499,7 @@ function ChatPanel({ firstName, fullName }: { firstName: string; fullName: strin
       } else {
         draft.current.qty = quantity ?? undefined;
         bot(`I found ${matches.length} items${quantity ? ` — pick one to add ${quantity}` : ""}:`, [
-          ...matches.map((p) => ({ label: `${p.name} (${p.unit}) — ${formatRupees(p.price)}`, value: `prod:${p.id}` })),
+          ...matches.map((p) => ({ label: `${p.name} (${p.unit}) — ${formatPrice(p.price)}`, value: `prod:${p.id}` })),
           { label: "Main menu", value: "menu" },
         ]);
       }

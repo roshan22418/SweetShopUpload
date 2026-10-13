@@ -54,4 +54,15 @@ class OrderMessageFormatterTest {
         assertTrue(msg.contains("Takeaway"));
         assertTrue(msg.contains("Paid online"));
     }
+
+    @Test
+    void customerCancellationTellsTheShopNotToPrepareIt() {
+        String msg = OrderMessageFormatter.cancelledByCustomer(order(FulfillmentType.TAKEAWAY, null, PaymentMethod.COD));
+
+        assertTrue(msg.contains("Order #42 cancelled by the customer"));
+        assertTrue(msg.contains("Asha Rao"));
+        assertTrue(msg.contains("9876543210"));
+        assertTrue(msg.contains("₹1550.00"));
+        assertTrue(msg.contains("No need to prepare it"));
+    }
 }

@@ -21,4 +21,10 @@ public class OrderNotificationListener {
     public void onOrderPlaced(OrderPlacedEvent event) {
         whatsAppNotifier.send(event.message());
     }
+
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderCancelled(OrderCancelledEvent event) {
+        whatsAppNotifier.send(event.message());
+    }
 }

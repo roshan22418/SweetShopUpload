@@ -33,6 +33,14 @@ public final class OrderMessageFormatter {
         return sb.toString();
     }
 
+    public static String cancelledByCustomer(Order order) {
+        return "❌ *Order #" + order.getId() + " cancelled by the customer*\n\n"
+                + "*Customer:* " + order.getUser().getFullName() + '\n'
+                + "*Phone:* " + order.getContactPhone() + '\n'
+                + "*Total:* ₹" + order.getTotalAmount().toPlainString() + "\n\n"
+                + "No need to prepare it — the stock has been put back.";
+    }
+
     private static String label(FulfillmentType type) {
         return switch (type) {
             case DINE_IN -> "Dine in";

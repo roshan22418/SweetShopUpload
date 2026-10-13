@@ -16,6 +16,8 @@ public class UserResponse {
     private String phoneNumber;
     private Role role;
     private LocalDateTime createdAt;
+    // false for accounts created through Google sign-in: there is no password to change
+    private boolean passwordSet;
 
     public static UserResponse from(User user) {
         return new UserResponse(
@@ -24,6 +26,7 @@ public class UserResponse {
                 user.getEmail(),
                 user.getPhoneNumber(),
                 user.getRole(),
-                user.getCreatedAt());
+                user.getCreatedAt(),
+                user.isPasswordSet());
     }
 }

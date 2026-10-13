@@ -14,9 +14,11 @@ This is the Next.js storefront + admin panel for **KING CAKE PLACE**. It's a cli
 ```
 src/
   app/                # one folder per route (App Router) — every page.tsx is "use client"
-  components/         # shared UI: Navbar, Hero, QuantityStepper, SearchBar, AuthLayout
+                      # plus not-found.tsx (branded 404) and error.tsx (error boundary with retry)
+  components/         # shared UI: Navbar, Hero, QuantityStepper, SearchBar, AuthLayout, OrderMessages, ChatBot
   context/            # AuthContext, CartContext — the only global state in the app
-  lib/                # api.ts, format.ts, search.ts, sound.ts, razorpay.ts — framework-free helpers
+  lib/                # api.ts, format.ts, search.ts, shopSettings.ts, sound.ts, razorpay.ts — framework-free helpers
+                      # (*.test.ts next to them: `npm test` runs them with vitest)
   types/index.ts       # every shared TypeScript type/interface, one file, matches the backend's DTOs
 ```
 
@@ -33,13 +35,18 @@ If a type doesn't exist yet for something the backend returns, add it to `types/
 | `/checkout` | Fulfillment type, payment method (COD or Razorpay), places the order | customer |
 | `/orders`, `/orders/[id]` | Order history / detail | customer, own orders only |
 | `/profile` | Edit name/phone, change password | any logged-in user |
-| `/admin/*` | Categories, Products (+ image upload), Orders (status updates), Settings (shop name) | `ADMIN` only — gated in `admin/layout.tsx` |
+| `/admin` | Overview dashboard: today's orders/sales, orders waiting, low stock, latest orders | `ADMIN` only |
+| `/admin/*` | Orders (live queue, next-step actions), Products (+ image upload, search, `?filter=low`, `?edit=<id>`), Categories, Settings (shop name) | `ADMIN` only — gated in `admin/layout.tsx` |
 
 `admin/layout.tsx` is the only route guard implemented as a layout; every other protected page redirects itself in a `useEffect` (see the Auth section) — that's an intentional inconsistency worth knowing about, not a bug, if you're adding a new protected page: follow whichever pattern the page you're closest to already uses.
 
+## Styling
+
+Brand tokens live in `app/globals.css` (`cream`, `ink`, `plum`, `gold`, `gold-light`, `charcoal`; `font-display` = Fraunces). Shared component classes are defined there too — `btn-primary`, `btn-secondary`, `btn-danger`, `card`, `field`, `field-label`, `page-title`, `section-title`, `alert-error`, `alert-success` — use them instead of re-typing long class lists or reaching for Tailwind's gray/amber palette. Every page is expected to have **no horizontal overflow at 390px** and every form input a `<label htmlFor>`.
+
 ## `context/AuthContext.tsx` — auth state
 
-- Holds `{token, userId, fullName, email, role}` (the exact shape of `AuthResponse` from `/api/auth/login|register`), persisted to `localStorage["sweetshop_auth"]`.
+- Holds `{token, userId, fullName, email, role}` (the exact shape of `AuthResponse` from `/api/auth/login|register`), persisted to `localStorage["sweetshop_auth"]` and read with `useSyncExternalStore` — logging in or out in one tab updates every open tab (browser `storage` event). `loading` is true until the browser's storage has been read (server render / hydration).
 - `login()` / `register()` call the backend, then persist the result (the 15-min access token; the refresh token is an httpOnly cookie JS can't see). `logout()` calls `POST /api/auth/logout` (revokes the refresh token server-side, best effort) and clears storage.
 - **Ordering chatbot** (`components/ChatBot.tsx` + pure helpers in `lib/chatbot.ts`, mounted once in `app/layout.tsx`): a floating 💬 widget, shown **only to logged-in customers** (hidden for guests and ADMIN; keyed by `userId` so logout/login starts a fresh chat). It's a rule-based, button-driven assistant — deliberately no AI/LLM and no external bot framework (Rasa/Botpress are separate servers + training, overkill for one menu): browse categories → pick item → quantity → cart, then checkout (Dine in / Takeaway / Delivery → address → phone → summary → explicit **Place order** confirmation). Typed shortcuts work too: `2 samosas` (quantity + plural-tolerant prefix search via `searchProducts`), `cart`, `checkout`, `my orders`, `help`, `cancel`. It calls only existing endpoints (`/api/products`, `/api/categories`, `/api/cart`, `/api/orders`, `/api/users/me`) through `apiFetch`/`CartContext`, so auth, stock limits, server-side pricing and the WhatsApp new-order alert behave exactly like the Checkout page. Orders from the bot are always **COD** (online payment stays on `/checkout`). Rules worth knowing: only the latest bot message's buttons are active; while collecting an address/phone only `cancel` is treated as a keyword (an address can literally be "Home"); phone is saved to the profile after an order, like checkout does. To extend: add a `value` case in `handleOption` and/or an intent in `detectIntent`.
 - **Google sign-in:** `GoogleSignInButton.tsx` lazy-loads Google Identity Services (`accounts.google.com/gsi/client`) and renders Google's own button; `GoogleAuthSection.tsx` wraps it with an "or" divider and error text on `/login` and `/register`, and calls `loginWithGoogle(idToken)` → `POST /api/auth/google`. Needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (build-time); without it the section renders nothing and the password form is unaffected. The site origin (`http://localhost:3000`, later the real domain) must be in the OAuth client's "Authorized JavaScript origins".
@@ -57,7 +64,8 @@ If a type doesn't exist yet for something the backend returns, add it to `types/
 
 ## `context/CartContext.tsx` — cart state, and the one non-obvious part of this codebase
 
-- Fetches `/api/cart` once on mount/login and holds it in state; `itemCount` is derived from it for the Navbar badge.
+- Fetches `/api/cart` once on login (keyed on `userId`, so a silent token refresh doesn't refetch) and holds it in state; `itemCount` is derived from it for the Navbar badge, and `cartLoading` is true until it has arrived (pages show a skeleton, not "empty").
+- Guests get a local cart (`localStorage`, read as an external store). On login it is merged into the account cart — only in the tab that logged in (`consumeFreshLogin`), so other open tabs don't merge it again.
 - `refreshCart()` **returns** the freshly-fetched `Cart` (not just `void`) — this matters because callers need the up-to-the-second item count immediately after a mutation (e.g. the "Added to cart — N items total" behavior), and relying on the React state update would be one render behind.
 - `getQuantity(productId)`, `incrementItem(productId, qty=1)`, `decrementItem(productId)` are what power the Amazon-style "the Add to Cart button turns into a `− N +` stepper" behavior on the home page and product detail page:
   - `incrementItem` POSTs — the backend's `/api/cart/items` is an **additive upsert**, so calling it repeatedly is always safe regardless of whether the item is already in the cart.
@@ -67,17 +75,24 @@ If a type doesn't exist yet for something the backend returns, add it to `types/
 ## `lib/` — framework-free helpers
 
 - **`api.ts`** — `apiFetch<T>(path, options)` attaches the JWT and `Content-Type: application/json`, and throws a typed `ApiError` (with `.status` and optional `.fieldErrors`) on any non-2xx response — every page's `catch` block checks `err instanceof ApiError` to show the backend's actual message instead of a generic one. `apiUpload<T>(path, file)` is the multipart sibling (used only for product image upload) — it deliberately does **not** set `Content-Type`, since the browser needs to generate its own multipart boundary. `resolveImageUrl(url)` is the only correct way to put a product's `imageUrl` into an `<img src>` — it only prepends the API host when the URL is relative (`/uploads/...`); an already-absolute URL (an admin-pasted external link) is left untouched. **Never concatenate `API_URL` with `imageUrl` directly** — that was a real bug once (see the project's own history) and `resolveImageUrl` exists specifically to make it impossible to reintroduce.
-- **`search.ts`** — `matchesSearch(product, query)` does client-side, word-boundary-prefix matching (typing "sa" matches "Samosa" even mid-string). No server-side search index exists on purpose — the whole catalog is already fetched for the grid, and this scale (a single shop's product list) doesn't need a real search backend.
+- **`search.ts`** — `matchesSearch(product, query)` does client-side, word-boundary-prefix matching: every query word must start some word of the name/description, plurals tolerated ("sa" matches "Samosa", "chocolate cakes" matches "Chocolate Truffle Cake"). The chatbot's `searchProducts` uses the same rule. No server-side search index exists on purpose — the whole catalog is already fetched for the grid, and this scale (a single shop's product list) doesn't need a real search backend.
 - **`sound.ts`** — `playPopSound()` synthesizes a short pop via the Web Audio API (no binary asset to host or load). Wrapped in try/catch since audio can be blocked by browser autoplay policy — sound is a nice-to-have, never something a click handler should fail on.
 - **`razorpay.ts`** — `loadRazorpayScript()` injects `checkout.js` once (idempotent — checks `window.Razorpay` first). The actual `new Razorpay(...).open()` call lives in `checkout/page.tsx` itself, not here, since its `handler` callback needs page-local state.
-- **`format.ts`** — `STATUS_STYLES` (order status → badge color) and `PAYMENT_METHOD_LABELS` (`COD`/`RAZORPAY` → emoji + label), plus `formatDate`.
+- **`format.ts`** — `formatPrice` (the only way to show money: `₹650`, `₹549.50`, `₹1,25,000`), `STATUS_STYLES` / `STATUS_LABELS` (order status → badge color / customer wording), `FULFILLMENT_LABELS`, `PAYMENT_METHOD_LABELS`, `formatDate`.
+- **`shopSettings.ts`** — `useShopSettings()` / `loadShopSettings()` / `setShopSettings()`: one shared copy of `/api/shop-settings` per page (includes `onlinePaymentEnabled`, which decides whether checkout offers "Pay online now").
 
 ## Components worth knowing
 
 - **`QuantityStepper.tsx`** — the reusable `− N +` control (`min`/`max`/`disabled` props). Used in three places: product cards, product detail page, and the cart page — all three read/write cart state through `CartContext`, not through their own local logic.
-- **`Hero.tsx`** — the home page banner; fetches `/api/shop-settings` itself for the live shop name (same call the Navbar makes — a small, accepted duplication rather than introducing a shared settings context for one string).
+- **`Hero.tsx`** — the home page banner; reads the live shop name via `useShopSettings()`.
+- **`lib/shopSettings.ts`** — `useShopSettings()` / `loadShopSettings()`: one shared copy of `/api/shop-settings` per page (fetched once; concurrent callers share the request). The admin Settings page calls `setShopSettings(saved)` after saving, so a renamed shop shows everywhere immediately. Use it instead of fetching settings in a component.
 - **`AuthLayout.tsx`** — the split-panel (photo + form) wrapper shared by `/login` and `/register`.
-- **`Navbar.tsx`** — fetches the shop name the same way `Hero.tsx` does, and syncs `document.title` to it client-side so the browser tab stays live-accurate after an admin renames the shop (the static `<title>` in `app/layout.tsx` is just the SSR/first-paint default).
+- **`Navbar.tsx`** — reads the shop name from `useShopSettings()`, and syncs `document.title` to it client-side so the browser tab stays live-accurate after an admin renames the shop (the static `<title>` in `app/layout.tsx` is just the SSR/first-paint default).
+
+## Orders (`app/orders/[id]/page.tsx`, `app/admin/orders/page.tsx`)
+
+- Customer order page: progress tracker, "Cancel order" for pending pay-at-counter orders (`POST /api/orders/{id}/cancel`), "Order again" (re-adds every line via `incrementItem` and names anything that can't be added), and `OrderMessages`, which refreshes every 15s while the tab is visible.
+- Admin orders: the list refreshes every 30s (chime + banner for new orders); each order shows only the status actions the backend allows next (`NEXT_STEPS`, mirroring `OrderStatus.canTransitionTo`).
 
 ## Checkout & payment flow (`app/checkout/page.tsx`)
 

@@ -30,7 +30,7 @@ public class CartService {
     }
 
     public CartResponse getCart(Long userId) {
-        var items = cartItemRepository.findByUserId(userId).stream()
+        var items = cartItemRepository.findWithProductByUserIdOrderByIdAsc(userId).stream()
                 .map(CartItemResponse::from)
                 .toList();
         return CartResponse.from(items);

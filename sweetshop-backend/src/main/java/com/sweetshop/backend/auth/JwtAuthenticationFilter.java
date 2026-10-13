@@ -10,6 +10,7 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -55,8 +56,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (JwtException | IllegalArgumentException ignored) {
-            // invalid/expired token -> request proceeds unauthenticated
+        } catch (JwtException | IllegalArgumentException | UsernameNotFoundException ignored) {
+            // invalid/expired token, or its account no longer exists -> request proceeds unauthenticated
+            // (public endpoints still work; protected ones answer 401 via the entry point)
         }
 
         filterChain.doFilter(request, response);

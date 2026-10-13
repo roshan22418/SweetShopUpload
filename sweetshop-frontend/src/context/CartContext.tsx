@@ -1,11 +1,12 @@
 "use client";
 
-import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useState, useSyncExternalStore, ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 import { Cart, Product } from "@/types";
-import { useAuth } from "@/context/AuthContext";
+import { consumeFreshLogin, useAuth } from "@/context/AuthContext";
 
 const GUEST_CART_KEY = "sweetshop_guest_cart";
+const GUEST_CART_EVENT = "sweetshop:guest-cart";
 
 // A guest cart has nowhere server-side to look up product details, so each
 // entry keeps a snapshot of the product as it was when added.
@@ -14,18 +15,35 @@ interface GuestCartEntry {
   quantity: number;
 }
 
-function readGuestCart(): GuestCartEntry[] {
+function parseGuestCart(raw: string | null): GuestCartEntry[] {
   try {
-    const raw = localStorage.getItem(GUEST_CART_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function writeGuestCart(entries: GuestCartEntry[]) {
-  localStorage.setItem(GUEST_CART_KEY, JSON.stringify(entries));
+function readGuestCart(): GuestCartEntry[] {
+  return parseGuestCart(localStorage.getItem(GUEST_CART_KEY));
 }
+
+function writeGuestCart(entries: GuestCartEntry[]) {
+  if (entries.length === 0) localStorage.removeItem(GUEST_CART_KEY);
+  else localStorage.setItem(GUEST_CART_KEY, JSON.stringify(entries));
+  window.dispatchEvent(new Event(GUEST_CART_EVENT));
+}
+
+// The guest cart is read as an external store (same tab via GUEST_CART_EVENT, other tabs via "storage").
+function subscribeGuestCart(onChange: () => void) {
+  window.addEventListener(GUEST_CART_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(GUEST_CART_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+const readGuestCartRaw = () => localStorage.getItem(GUEST_CART_KEY);
+const noGuestCartOnServer = () => null;
 
 function guestCartToCart(entries: GuestCartEntry[]): Cart {
   const items = entries.map((e) => ({
@@ -42,6 +60,8 @@ function guestCartToCart(entries: GuestCartEntry[]): Cart {
 
 interface CartContextValue {
   cart: Cart | null;
+  /** True while a logged-in user's cart hasn't arrived yet (so "empty" isn't shown prematurely). */
+  cartLoading: boolean;
   itemCount: number;
   refreshCart: () => Promise<Cart | null>;
   getQuantity: (productId: number) => number;
@@ -55,47 +75,52 @@ const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [cart, setCart] = useState<Cart | null>(null);
+  const userId = user?.userId ?? null;
+
+  const guestRaw = useSyncExternalStore(subscribeGuestCart, readGuestCartRaw, noGuestCartOnServer);
+  const guestCart = useMemo(() => guestCartToCart(parseGuestCart(guestRaw)), [guestRaw]);
+
+  // The server cart is remembered together with whose it is, so a different account never sees it.
+  const [serverCart, setServerCart] = useState<{ userId: number; cart: Cart | null } | null>(null);
+  const cart = userId === null ? guestCart : serverCart?.userId === userId ? serverCart.cart : null;
+  const cartLoading = userId !== null && serverCart?.userId !== userId;
 
   const refreshCart = useCallback(async () => {
-    if (!user) {
-      const c = guestCartToCart(readGuestCart());
-      setCart(c);
-      return c;
-    }
+    if (userId === null) return guestCartToCart(readGuestCart());
     try {
       const data = await apiFetch<Cart>("/api/cart");
-      setCart(data);
+      setServerCart({ userId, cart: data });
       return data;
     } catch {
-      setCart(null);
+      setServerCart({ userId, cart: null });
       return null;
     }
-  }, [user]);
+  }, [userId]);
 
-  useEffect(() => {
-    refreshCart();
-  }, [refreshCart]);
-
-  // The moment someone logs in, fold whatever they added while browsing as a
-  // guest into their real account cart, then clear the local copy — items
+  // Load the account's cart on login. In the tab where someone just logged in, whatever they added while
+  // browsing as a guest is folded into their real cart first, then the local copy is cleared — items
   // survive login instead of being silently dropped right before checkout.
   useEffect(() => {
-    if (!user) return;
-    const entries = readGuestCart();
-    if (entries.length === 0) return;
-    localStorage.removeItem(GUEST_CART_KEY);
+    if (userId === null) return;
+    let cancelled = false;
     (async () => {
-      for (const entry of entries) {
-        await apiFetch("/api/cart/items", {
-          method: "POST",
-          body: JSON.stringify({ productId: entry.product.id, quantity: entry.quantity }),
-        }).catch(() => {});
+      const entries = consumeFreshLogin(userId) ? readGuestCart() : [];
+      if (entries.length > 0) {
+        writeGuestCart([]);
+        for (const entry of entries) {
+          await apiFetch("/api/cart/items", {
+            method: "POST",
+            body: JSON.stringify({ productId: entry.product.id, quantity: entry.quantity }),
+          }).catch(() => {});
+        }
       }
-      refreshCart();
+      const data = await apiFetch<Cart>("/api/cart").catch(() => null);
+      if (!cancelled) setServerCart({ userId, cart: data });
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const itemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
 
@@ -107,16 +132,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // Additive upsert on the backend — safe to call whether or not the item is already in the cart.
   const incrementItem = useCallback(
     async (product: Product, quantity = 1) => {
-      if (!user) {
+      if (userId === null) {
         const entries = readGuestCart();
         const existing = entries.find((e) => e.product.id === product.id);
         const next = existing
-          ? entries.map((e) => (e.product.id === product.id ? { ...e, quantity: e.quantity + quantity } : e))
+          ? entries.map((e) => (e.product.id === product.id ? { ...e, product, quantity: e.quantity + quantity } : e))
           : [...entries, { product, quantity }];
         writeGuestCart(next);
-        const c = guestCartToCart(next);
-        setCart(c);
-        return c;
+        return guestCartToCart(next);
       }
       await apiFetch("/api/cart/items", {
         method: "POST",
@@ -124,21 +147,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       });
       return refreshCart();
     },
-    [user, refreshCart]
+    [userId, refreshCart]
   );
 
   const setQuantity = useCallback(
     async (productId: number, quantity: number) => {
-      if (!user) {
+      if (userId === null) {
         const entries = readGuestCart();
         const next =
           quantity <= 0
             ? entries.filter((e) => e.product.id !== productId)
             : entries.map((e) => (e.product.id === productId ? { ...e, quantity } : e));
         writeGuestCart(next);
-        const c = guestCartToCart(next);
-        setCart(c);
-        return c;
+        return guestCartToCart(next);
       }
       if (quantity <= 0) {
         await apiFetch(`/api/cart/items/${productId}`, { method: "DELETE" });
@@ -150,7 +171,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
       return refreshCart();
     },
-    [user, refreshCart]
+    [userId, refreshCart]
   );
 
   const decrementItem = useCallback(
@@ -162,7 +183,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ cart, itemCount, refreshCart, getQuantity, incrementItem, decrementItem, setQuantity, removeItem }}
+      value={{ cart, cartLoading, itemCount, refreshCart, getQuantity, incrementItem, decrementItem, setQuantity, removeItem }}
     >
       {children}
     </CartContext.Provider>

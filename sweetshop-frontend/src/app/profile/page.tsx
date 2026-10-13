@@ -9,7 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { formatDate } from "@/lib/format";
 
 export default function ProfilePage() {
-  const { user, loading, setUserFullName } = useAuth();
+  const { user, loading, setUserFullName, login } = useAuth();
   const router = useRouter();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -32,15 +32,17 @@ export default function ProfilePage() {
     }
   }, [loading, user, router]);
 
+  const userId = user?.userId;
   useEffect(() => {
-    if (user) {
-      apiFetch<UserProfile>("/api/users/me").then((data) => {
+    if (userId === undefined) return;
+    apiFetch<UserProfile>("/api/users/me")
+      .then((data) => {
         setProfile(data);
         setFullName(data.fullName);
         setPhoneNumber(data.phoneNumber ?? "");
-      });
-    }
-  }, [user]);
+      })
+      .catch(() => {});
+  }, [userId]);
 
   async function handleProfileSubmit(e: FormEvent) {
     e.preventDefault();
@@ -54,7 +56,7 @@ export default function ProfilePage() {
       });
       setProfile(updated);
       setUserFullName(updated.fullName);
-      setProfileSuccess("Profile updated.");
+      setProfileSuccess("Your details have been saved.");
     } catch (err) {
       setProfileError(err instanceof ApiError ? err.message : "Failed to update profile.");
     } finally {
@@ -78,10 +80,12 @@ export default function ProfilePage() {
         method: "PUT",
         body: JSON.stringify({ currentPassword, newPassword }),
       });
+      // The backend signs out every session on a password change; sign this device straight back in.
+      await login(profile!.email, newPassword).catch(() => {});
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-      setPasswordSuccess("Password changed.");
+      setPasswordSuccess("Password changed. You've been signed out on all other devices.");
     } catch (err) {
       setPasswordError(err instanceof ApiError ? err.message : "Failed to change password.");
     } finally {
@@ -89,134 +93,147 @@ export default function ProfilePage() {
     }
   }
 
-  if (loading || !user || !profile) return null;
+  if (loading || !user) return null;
+  if (!profile) return <div className="card mx-auto h-64 max-w-2xl animate-pulse bg-gold-light/20" aria-busy="true" />;
 
   return (
-    <div className="mx-auto max-w-lg">
-      <h1 className="mb-6 text-2xl font-bold text-amber-900">Your Profile</h1>
+    <div className="mx-auto flex max-w-2xl flex-col gap-5">
+      <h1 className="page-title">Your account</h1>
 
-      <div className="mb-6 rounded-lg border border-gray-200 p-4 text-sm text-gray-600">
-        <p>
-          <span className="font-medium text-gray-800">Email:</span> {profile.email}{" "}
-          <span className="text-xs text-gray-400">(cannot be changed)</span>
-        </p>
-        <p>
-          <span className="font-medium text-gray-800">Role:</span> {profile.role}
-        </p>
-        <p>
-          <span className="font-medium text-gray-800">Member since:</span> {formatDate(profile.createdAt)}
-        </p>
+      <div className="card flex items-center gap-4">
+        <span
+          className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-plum font-display text-2xl text-cream"
+          aria-hidden="true"
+        >
+          {profile.fullName.trim().charAt(0).toUpperCase()}
+        </span>
+        <div className="min-w-0 text-sm">
+          <p className="truncate font-display text-lg text-ink">
+            {profile.fullName}
+            {profile.role === "ADMIN" && (
+              <span className="ml-2 rounded-full bg-gold-light/60 px-2 py-0.5 align-middle font-sans text-xs font-semibold text-ink">
+                Shop admin
+              </span>
+            )}
+          </p>
+          <p className="truncate text-charcoal/70">{profile.email}</p>
+          <p className="text-xs text-charcoal/50">Member since {formatDate(profile.createdAt)}</p>
+        </div>
       </div>
 
       {profile.role === "CUSTOMER" && (
-        <div className="mb-8 rounded-lg border border-gray-200 p-4">
-          <h2 className="mb-3 font-semibold text-gray-900">Orders</h2>
-          <div className="flex gap-3">
-            <Link
-              href="/orders?view=active"
-              className="flex-1 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-800 hover:bg-amber-100"
-            >
-              My Orders
-              <span className="mt-0.5 block text-xs font-normal text-amber-700">Still in progress</span>
-            </Link>
-            <Link
-              href="/orders?view=history"
-              className="flex-1 rounded-md border border-gray-200 px-4 py-3 text-center text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Order History
-              <span className="mt-0.5 block text-xs font-normal text-gray-500">Completed &amp; cancelled</span>
-            </Link>
-          </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/orders?view=active" className="card p-4 text-center transition hover:border-gold">
+            <p className="font-semibold text-ink">My orders</p>
+            <p className="text-xs text-charcoal/60">In progress</p>
+          </Link>
+          <Link href="/orders?view=history" className="card p-4 text-center transition hover:border-gold">
+            <p className="font-semibold text-ink">Order history</p>
+            <p className="text-xs text-charcoal/60">Completed &amp; cancelled</p>
+          </Link>
         </div>
       )}
 
-      <form onSubmit={handleProfileSubmit} className="mb-8 flex flex-col gap-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="font-semibold text-gray-900">Edit details</h2>
-        {profileError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{profileError}</p>}
-        {profileSuccess && (
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{profileSuccess}</p>
-        )}
+      <form onSubmit={handleProfileSubmit} className="card flex flex-col gap-4">
+        <h2 className="section-title">Your details</h2>
+        {profileError && <p className="alert-error">{profileError}</p>}
+        {profileSuccess && <p className="alert-success">{profileSuccess}</p>}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Full name</label>
-          <input
-            required
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
-          />
+          <label htmlFor="fullName" className="field-label">
+            Full name
+          </label>
+          <input id="fullName" required maxLength={150} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} className="field" />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Phone number <span className="text-gray-400">(optional)</span>
+          <label htmlFor="phoneNumber" className="field-label">
+            Phone number <span className="text-charcoal/40">(optional)</span>
           </label>
           <input
+            id="phoneNumber"
+            type="tel"
+            maxLength={20}
+            autoComplete="tel"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
+          <p className="mt-1 text-xs text-charcoal/50">Used to pre-fill checkout. Your email can&apos;t be changed.</p>
         </div>
 
-        <button
-          type="submit"
-          disabled={savingProfile}
-          className="self-start rounded-md bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={savingProfile} className="btn-primary self-start">
           {savingProfile ? "Saving..." : "Save changes"}
         </button>
       </form>
 
-      <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="font-semibold text-gray-900">Change password</h2>
-        {passwordError && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{passwordError}</p>}
-        {passwordSuccess && (
-          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{passwordSuccess}</p>
-        )}
+      {profile.passwordSet ? (
+        <form onSubmit={handlePasswordSubmit} className="card flex flex-col gap-4">
+          <h2 className="section-title">Change password</h2>
+          {passwordError && <p className="alert-error">{passwordError}</p>}
+          {passwordSuccess && <p className="alert-success">{passwordSuccess}</p>}
 
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Current password</label>
-          <input
-            type="password"
-            required
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
-          />
+          <div>
+            <label htmlFor="currentPassword" className="field-label">
+              Current password
+            </label>
+            <input
+              id="currentPassword"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="field"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="newPassword" className="field-label">
+                New password
+              </label>
+              <input
+                id="newPassword"
+                type="password"
+                required
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="field"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirmNewPassword" className="field-label">
+                Confirm new password
+              </label>
+              <input
+                id="confirmNewPassword"
+                type="password"
+                required
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                className="field"
+              />
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-charcoal/50">8–72 characters. Other devices will be signed out.</p>
+
+          <button type="submit" disabled={savingPassword} className="btn-primary self-start">
+            {savingPassword ? "Changing..." : "Change password"}
+          </button>
+        </form>
+      ) : (
+        <div className="card text-sm text-charcoal/70">
+          <h2 className="section-title mb-1">Password</h2>
+          You sign in with Google, so there&apos;s no password to change here — manage it in your Google account.
         </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">New password</label>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Confirm new password</label>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={confirmNewPassword}
-            onChange={(e) => setConfirmNewPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={savingPassword}
-          className="self-start rounded-md bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-        >
-          {savingPassword ? "Changing..." : "Change password"}
-        </button>
-      </form>
+      )}
     </div>
   );
 }
