@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
-import { ShopSettings } from "@/types";
+import { DEFAULT_SHOP_NAME, useShopSettings } from "@/lib/shopSettings";
 
 export default function ContactPage() {
-  const [settings, setSettings] = useState<ShopSettings | null>(null);
-
-  useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings").then(setSettings).catch(() => {});
-  }, []);
+  const settings = useShopSettings();
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="mb-6 text-2xl font-bold text-amber-900">Contact Us</h1>
 
       <div className="rounded-lg border border-gray-200 p-5">
-        <p className="text-lg font-semibold text-gray-900">{settings?.shopName ?? "KING CAKE PLACE"}</p>
+        <p className="text-lg font-semibold text-gray-900">{settings?.shopName ?? DEFAULT_SHOP_NAME}</p>
         {settings?.description && <p className="mt-1 text-sm text-gray-600">{settings.description}</p>}
 
         <div className="mt-4 flex flex-col gap-2 text-sm text-gray-700">

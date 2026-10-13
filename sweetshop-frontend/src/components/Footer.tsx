@@ -1,17 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
-import { ShopSettings } from "@/types";
+import { DEFAULT_SHOP_NAME, useShopSettings } from "@/lib/shopSettings";
 import CrownMark from "@/components/CrownMark";
 
 export default function Footer() {
-  const [settings, setSettings] = useState<ShopSettings | null>(null);
-
-  useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings").then(setSettings).catch(() => {});
-  }, []);
+  const settings = useShopSettings();
 
   return (
     <footer className="mt-12 bg-ink">
@@ -19,7 +13,7 @@ export default function Footer() {
         <div>
           <p className="flex items-center gap-2 font-[family-name:var(--font-display)] text-lg font-medium text-cream">
             <CrownMark className="h-4 w-4 text-gold" />
-            {settings?.shopName ?? "KING CAKE PLACE"}
+            {settings?.shopName ?? DEFAULT_SHOP_NAME}
           </p>
           {settings?.description && <p className="mt-2 text-sm text-cream/60">{settings.description}</p>}
         </div>
@@ -56,7 +50,7 @@ export default function Footer() {
       </div>
 
       <div className="border-t border-cream/10 py-4 text-center text-xs text-cream/40">
-        © {new Date().getFullYear()} {settings?.shopName ?? "KING CAKE PLACE"}. All rights reserved.
+        © {new Date().getFullYear()} {settings?.shopName ?? DEFAULT_SHOP_NAME}. All rights reserved.
       </div>
     </footer>
   );

@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
-import { ShopSettings } from "@/types";
+import { DEFAULT_SHOP_NAME, useShopSettings } from "@/lib/shopSettings";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import CrownMark from "@/components/CrownMark";
@@ -13,17 +12,13 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const { itemCount } = useCart();
   const router = useRouter();
-  const [shopName, setShopName] = useState("KING CAKE PLACE");
+  const shopName = useShopSettings()?.shopName ?? DEFAULT_SHOP_NAME;
   const [scrolled, setScrolled] = useState(false);
 
+  // Keep the browser tab in sync with the live shop name (the static <title> is just the first paint).
   useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings")
-      .then((settings) => {
-        setShopName(settings.shopName);
-        document.title = settings.shopName;
-      })
-      .catch(() => {});
-  }, []);
+    document.title = shopName;
+  }, [shopName]);
 
   // Sits flush with the page at rest; scrolling brings up the frosted-glass
   // look (deeper blur, a visible edge) so the bar reads as "now floating

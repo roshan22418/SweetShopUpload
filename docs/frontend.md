@@ -75,9 +75,10 @@ If a type doesn't exist yet for something the backend returns, add it to `types/
 ## Components worth knowing
 
 - **`QuantityStepper.tsx`** — the reusable `− N +` control (`min`/`max`/`disabled` props). Used in three places: product cards, product detail page, and the cart page — all three read/write cart state through `CartContext`, not through their own local logic.
-- **`Hero.tsx`** — the home page banner; fetches `/api/shop-settings` itself for the live shop name (same call the Navbar makes — a small, accepted duplication rather than introducing a shared settings context for one string).
+- **`Hero.tsx`** — the home page banner; reads the live shop name via `useShopSettings()`.
+- **`lib/shopSettings.ts`** — `useShopSettings()` / `loadShopSettings()`: one shared copy of `/api/shop-settings` per page (fetched once; concurrent callers share the request). The admin Settings page calls `setShopSettings(saved)` after saving, so a renamed shop shows everywhere immediately. Use it instead of fetching settings in a component.
 - **`AuthLayout.tsx`** — the split-panel (photo + form) wrapper shared by `/login` and `/register`.
-- **`Navbar.tsx`** — fetches the shop name the same way `Hero.tsx` does, and syncs `document.title` to it client-side so the browser tab stays live-accurate after an admin renames the shop (the static `<title>` in `app/layout.tsx` is just the SSR/first-paint default).
+- **`Navbar.tsx`** — reads the shop name from `useShopSettings()`, and syncs `document.title` to it client-side so the browser tab stays live-accurate after an admin renames the shop (the static `<title>` in `app/layout.tsx` is just the SSR/first-paint default).
 
 ## Checkout & payment flow (`app/checkout/page.tsx`)
 

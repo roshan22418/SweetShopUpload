@@ -103,7 +103,7 @@ This is the most involved service — `OrderService.checkout()` is the one metho
 - `ReviewModerationController` (`/api/reviews/{reviewId}`): `ADMIN`-only delete of *any* review — separated into its own controller because it's a different actor (admin, not the review's author) even though it operates on the same entity.
 
 ### `settings` — shop identity
-- Single-row table (`shop_settings`), always the first row, seeded via migration with the shop name `KING CAKE PLACE`. `GET /api/shop-settings` is public (the storefront's navbar needs it for logged-out visitors too); `PUT` is `ADMIN`-only. This is what makes the shop's name/branding editable without a code change or redeploy.
+- Single-row table (`shop_settings`), always the first row, seeded via migration with the shop name `KING CAKE PLACE`. `GET /api/shop-settings` is public (the storefront's navbar needs it for logged-out visitors too); `PUT` is `ADMIN`-only. The response also carries `onlinePaymentEnabled` (not stored — true when Razorpay keys are configured) so the checkout only offers "Pay online now" when it can work. This is what makes the shop's name/branding editable without a code change or redeploy.
 
 ## Query performance
 

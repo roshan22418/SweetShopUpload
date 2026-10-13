@@ -104,6 +104,8 @@ export interface ShopSettings {
   contactPhone: string | null;
   address: string | null;
   email: string | null;
+  /** True when the backend has Razorpay keys, i.e. "Pay online now" can work. */
+  onlinePaymentEnabled: boolean;
 }
 
 export interface OrderMessage {

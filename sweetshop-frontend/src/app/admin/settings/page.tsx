@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { ShopSettings } from "@/types";
+import { loadShopSettings, setShopSettings } from "@/lib/shopSettings";
 
 const emptyForm = {
   shopName: "",
@@ -20,8 +21,9 @@ export default function AdminSettingsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    apiFetch<ShopSettings>("/api/shop-settings")
+    loadShopSettings()
       .then((settings) =>
+        settings &&
         setForm({
           shopName: settings.shopName,
           description: settings.description ?? "",
@@ -39,7 +41,7 @@ export default function AdminSettingsPage() {
     setSuccess(null);
     setSubmitting(true);
     try {
-      await apiFetch("/api/shop-settings", {
+      const saved = await apiFetch<ShopSettings>("/api/shop-settings", {
         method: "PUT",
         body: JSON.stringify({
           shopName: form.shopName,
@@ -49,7 +51,8 @@ export default function AdminSettingsPage() {
           email: form.email || undefined,
         }),
       });
-      setSuccess("Shop settings saved. Refresh the page to see the new name everywhere.");
+      setShopSettings(saved);
+      setSuccess("Shop settings saved.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save shop settings.");
     } finally {

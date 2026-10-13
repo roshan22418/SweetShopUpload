@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPrice } from "@/lib/format";
 import { apiFetch, ApiError } from "@/lib/api";
-import { Order, FulfillmentType, PaymentMethod, RazorpayOrderResponse, ShopSettings, UserProfile } from "@/types";
+import { Order, FulfillmentType, PaymentMethod, RazorpayOrderResponse, UserProfile } from "@/types";
+import { DEFAULT_SHOP_NAME, loadShopSettings, useShopSettings } from "@/lib/shopSettings";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { loadRazorpayScript, RazorpaySuccessResponse } from "@/lib/razorpay";
@@ -24,6 +25,8 @@ export default function CheckoutPage() {
   const { user, loading } = useAuth();
   const { cart, refreshCart } = useCart();
   const router = useRouter();
+  // Only offered when the shop has Razorpay keys configured; otherwise it would just fail after the click.
+  const onlinePaymentEnabled = useShopSettings()?.onlinePaymentEnabled ?? false;
 
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>("DINE_IN");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
@@ -89,9 +92,7 @@ export default function CheckoutPage() {
       throw new Error("Could not load the payment gateway. Check your connection and try again.");
     }
 
-    const shopName = await apiFetch<ShopSettings>("/api/shop-settings")
-      .then((s) => s.shopName)
-      .catch(() => "KING CAKE PLACE");
+    const shopName = (await loadShopSettings())?.shopName ?? DEFAULT_SHOP_NAME;
 
     return new Promise<void>((resolve, reject) => {
       const razorpay = new window.Razorpay!({
@@ -207,21 +208,27 @@ export default function CheckoutPage() {
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <label className="mb-3 block text-sm font-semibold text-gray-800">Payment</label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {PAYMENT_OPTIONS.map((opt) => (
-                <button
-                  type="button"
-                  key={opt.value}
-                  onClick={() => setPaymentMethod(opt.value)}
-                  className={`rounded-lg border px-3 py-3 text-left text-sm transition ${
-                    paymentMethod === opt.value
-                      ? "border-amber-600 bg-amber-50 ring-1 ring-amber-600"
-                      : "border-gray-200 hover:border-amber-300"
-                  }`}
-                >
-                  <p className="font-medium text-gray-900">{opt.label}</p>
-                  <p className="text-xs text-gray-500">{opt.description}</p>
-                </button>
-              ))}
+              {PAYMENT_OPTIONS.map((opt) => {
+                const unavailable = opt.value === "RAZORPAY" && !onlinePaymentEnabled;
+                return (
+                  <button
+                    type="button"
+                    key={opt.value}
+                    disabled={unavailable}
+                    onClick={() => setPaymentMethod(opt.value)}
+                    className={`rounded-lg border px-3 py-3 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      paymentMethod === opt.value
+                        ? "border-amber-600 bg-amber-50 ring-1 ring-amber-600"
+                        : "border-gray-200 hover:border-amber-300"
+                    }`}
+                  >
+                    <p className="font-medium text-gray-900">{opt.label}</p>
+                    <p className="text-xs text-gray-500">
+                      {unavailable ? "Not available right now" : opt.description}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
