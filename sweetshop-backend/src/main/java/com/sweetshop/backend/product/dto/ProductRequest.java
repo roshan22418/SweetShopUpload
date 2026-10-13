@@ -36,6 +36,7 @@ public class ProductRequest {
     @Min(value = 0, message = "Stock quantity must not be negative")
     private Integer stockQuantity;
 
+    @Size(max = 500, message = "Image URL must be at most 500 characters")
     private String imageUrl;
 
     private Boolean isAvailable;
