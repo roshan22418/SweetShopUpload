@@ -19,6 +19,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -82,10 +83,20 @@ public class OrderService {
 
         BigDecimal total = BigDecimal.ZERO;
 
-        for (CartItem cartItem : cartItems) {
-            Product product = productRepository.findById(cartItem.getProduct().getId())
+        // Lock rows in a fixed (id) order so two checkouts sharing products can't deadlock each other.
+        List<CartItem> lines = cartItems.stream()
+                .sorted(Comparator.comparing(cartItem -> cartItem.getProduct().getId()))
+                .toList();
+
+        for (CartItem cartItem : lines) {
+            Product product = productRepository.findByIdForUpdate(cartItem.getProduct().getId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                            "Product no longer exists: " + cartItem.getProduct().getName()));
+                            "A product in your cart no longer exists — please remove it"));
+
+            if (!Boolean.TRUE.equals(product.getIsAvailable())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        product.getName() + " is no longer available — please remove it from your cart");
+            }
 
             if (cartItem.getQuantity() > product.getStockQuantity()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
