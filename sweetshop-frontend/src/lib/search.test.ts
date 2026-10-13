@@ -16,4 +16,13 @@ describe("matchesSearch", () => {
   it("matches everything for an empty query", () => {
     expect(matchesSearch(samosa, "  ")).toBe(true);
   });
+  it("needs every word of a multi-word query to match", () => {
+    expect(matchesSearch(samosa, "punjabi samosa")).toBe(true);
+    expect(matchesSearch(samosa, "spiced pot")).toBe(true);
+    expect(matchesSearch(samosa, "punjabi cake")).toBe(false);
+  });
+  it("tolerates plurals", () => {
+    expect(matchesSearch(samosa, "samosas")).toBe(true);
+    expect(matchesSearch({ name: "Veg Sandwich", description: null } as Product, "sandwiches")).toBe(true);
+  });
 });

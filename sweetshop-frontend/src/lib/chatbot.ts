@@ -56,21 +56,10 @@ export function parseOrderText(text: string): ParsedOrderText {
   return { quantity, query: rest.join(" ") };
 }
 
-// "cakes" should find "Cake", "sandwiches" should find "Sandwich"
-function singularForms(word: string): string[] {
-  const forms = [word];
-  if (word.length > 3 && word.endsWith("es")) forms.push(word.slice(0, -2));
-  if (word.length > 2 && word.endsWith("s")) forms.push(word.slice(0, -1));
-  return forms;
-}
-
-/** Every word of the query must prefix-match a word in the product's name/description. */
+/** Every word of the query must prefix-match a word in the product's name/description (see matchesSearch). */
 export function searchProducts(products: Product[], query: string, limit = 8): Product[] {
-  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  if (words.length === 0) return [];
-  return products
-    .filter((p) => words.every((w) => singularForms(w).some((form) => matchesSearch(p, form))))
-    .slice(0, limit);
+  if (!query.trim()) return [];
+  return products.filter((p) => matchesSearch(p, query)).slice(0, limit);
 }
 
 /** Sellable right now: shown to customers and in stock. */
