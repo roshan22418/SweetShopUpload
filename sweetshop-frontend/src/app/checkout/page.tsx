@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatPrice } from "@/lib/format";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Order, FulfillmentType, PaymentMethod, RazorpayOrderResponse, ShopSettings, UserProfile } from "@/types";
 import { useAuth } from "@/context/AuthContext";
@@ -146,7 +147,7 @@ export default function CheckoutPage() {
       ? "Waiting for payment..."
       : "Placing order..."
     : paymentMethod === "RAZORPAY"
-      ? `Pay ₹${cart.totalAmount} & Place Order`
+      ? `Pay ${formatPrice(cart.totalAmount)} & Place Order`
       : "Place Order";
 
   return (
@@ -234,13 +235,13 @@ export default function CheckoutPage() {
                   <span className="truncate pr-2">
                     {item.productName} × {item.quantity}
                   </span>
-                  <span className="flex-shrink-0">₹{item.subtotal}</span>
+                  <span className="flex-shrink-0">{formatPrice(item.subtotal)}</span>
                 </div>
               ))}
             </div>
             <div className="mt-3 flex justify-between border-t border-gray-200 pt-3 text-base font-semibold text-gray-900">
               <span>Total</span>
-              <span>₹{cart.totalAmount}</span>
+              <span>{formatPrice(cart.totalAmount)}</span>
             </div>
 
             <button

@@ -92,7 +92,3 @@ export function detectIntent(text: string): Intent {
   if (/^(cancel|stop|nevermind|never mind|no|back)$/.test(t)) return "cancel";
   return "none";
 }
-
-export function formatRupees(amount: number): string {
-  return `₹${amount.toFixed(2)}`;
-}

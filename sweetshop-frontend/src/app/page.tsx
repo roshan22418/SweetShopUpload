@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { formatPrice } from "@/lib/format";
 import { apiFetch, resolveImageUrl } from "@/lib/api";
 import { Category, Product, ReviewSummary } from "@/types";
 import { useAuth } from "@/context/AuthContext";
@@ -116,7 +117,7 @@ function ProductCard({ product: p, qty, busy, rating, onIncrement, onDecrement }
       </Link>
       <div className="flex items-center justify-between px-4 pb-4">
         <div>
-          <span className="font-semibold text-ink">₹{p.price}</span>
+          <span className="font-semibold text-ink">{formatPrice(p.price)}</span>
           <span className="ml-1 text-xs text-charcoal/50">/ {p.unit}</span>
         </div>
         {qty > 0 ? (

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Order } from "@/types";
 import { useAuth } from "@/context/AuthContext";
-import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate } from "@/lib/format";
+import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate, formatPrice } from "@/lib/format";
 import OrderMessages from "@/components/OrderMessages";
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -57,12 +57,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             <span>
               {item.productName} × {item.quantity}
             </span>
-            <span>₹{item.subtotal}</span>
+            <span>{formatPrice(item.subtotal)}</span>
           </div>
         ))}
         <div className="mt-2 flex justify-between border-t border-gray-200 pt-2 font-semibold text-gray-900">
           <span>Total</span>
-          <span>₹{order.totalAmount}</span>
+          <span>{formatPrice(order.totalAmount)}</span>
         </div>
       </div>
 

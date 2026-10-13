@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { formatPrice } from "@/lib/format";
 import { apiFetch, ApiError, resolveImageUrl } from "@/lib/api";
 import { Product, ReviewSummary } from "@/types";
 import { useAuth } from "@/context/AuthContext";
@@ -116,7 +117,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const subtotal = (product.price * quantity).toFixed(2);
+  const subtotal = formatPrice(product.price * quantity);
   const qtyInCart = getQuantity(product.id);
 
   return (
@@ -146,7 +147,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <p className="mt-3 leading-relaxed text-gray-600">{product.description}</p>
 
           <div className="mt-5 flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-amber-900">₹{product.price}</span>
+            <span className="text-3xl font-bold text-amber-900">{formatPrice(product.price)}</span>
             <span className="text-sm text-gray-500">/ {product.unit}</span>
           </div>
 
@@ -176,7 +177,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   }
                 />
                 <span className="text-sm font-medium text-green-700">
-                  ✓ In your cart · ₹{(product.price * qtyInCart).toFixed(2)}
+                  ✓ In your cart · {formatPrice(product.price * qtyInCart)}
                 </span>
               </div>
             ) : (
@@ -198,7 +199,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       ? "Out of Stock"
                       : adding
                         ? "Adding..."
-                        : `Add to Cart · ₹${subtotal}`}
+                        : `Add to Cart · ${subtotal}`}
                 </button>
               </div>
             )}

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { Order, OrderStatus } from "@/types";
 import { useAuth } from "@/context/AuthContext";
-import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate } from "@/lib/format";
+import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate, formatPrice } from "@/lib/format";
 
 const ACTIVE_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED"];
 const HISTORY_STATUSES: OrderStatus[] = ["COMPLETED", "CANCELLED"];
@@ -90,7 +90,7 @@ function OrdersList() {
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-semibold text-gray-900">₹{o.totalAmount}</span>
+                <span className="font-semibold text-gray-900">{formatPrice(o.totalAmount)}</span>
                 <span className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLES[o.status]}`}>
                   {o.status}
                 </span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { formatPrice } from "@/lib/format";
 import { apiFetch, apiUpload, ApiError, resolveImageUrl } from "@/lib/api";
 import { Category, ImageUploadResponse, Product } from "@/types";
 
@@ -137,7 +138,7 @@ export default function AdminProductsPage() {
                 </td>
                 <td className="py-2 text-gray-600">{p.categoryName}</td>
                 <td className="py-2 text-gray-600">
-                  ₹{p.price}/{p.unit}
+                  {formatPrice(p.price)}/{p.unit}
                 </td>
                 <td className="py-2 text-gray-600">{p.stockQuantity}</td>
                 <td className="py-2 text-right">

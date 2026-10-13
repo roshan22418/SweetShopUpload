@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Order, OrderStatus } from "@/types";
-import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate } from "@/lib/format";
+import { STATUS_STYLES, PAYMENT_METHOD_LABELS, formatDate, formatPrice } from "@/lib/format";
 import OrderMessages from "@/components/OrderMessages";
 
 const STATUS_OPTIONS: OrderStatus[] = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"];
@@ -154,12 +154,12 @@ function AdminOrdersList() {
                     <span>
                       {item.productName} × {item.quantity}
                     </span>
-                    <span>₹{item.subtotal}</span>
+                    <span>{formatPrice(item.subtotal)}</span>
                   </div>
                 ))}
                 <div className="mt-1 flex justify-between font-semibold text-gray-900">
                   <span>Total</span>
-                  <span>₹{o.totalAmount}</span>
+                  <span>{formatPrice(o.totalAmount)}</span>
                 </div>
               </div>
 
