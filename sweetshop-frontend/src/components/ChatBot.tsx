@@ -16,7 +16,7 @@ import {
   parseQuantity,
   searchProducts,
 } from "@/lib/chatbot";
-import { formatPrice } from "@/lib/format";
+import { FULFILLMENT_LABELS, formatPrice } from "@/lib/format";
 
 // A guided, rule-based ordering assistant: buttons for the main path, plus typed shortcuts
 // ("2 samosas", "cart", "checkout"). It only calls the same endpoints the website pages use, so
@@ -52,12 +52,6 @@ const MENU_OPTIONS: Opt[] = [
   { label: "📦 My orders", value: "orders" },
   { label: "❓ Help", value: "help" },
 ];
-
-const FULFILLMENT_LABELS: Record<FulfillmentType, string> = {
-  DINE_IN: "Dine in",
-  TAKEAWAY: "Takeaway",
-  DELIVERY: "Delivery",
-};
 
 const YES = /^(yes|y|yep|yeah|ok|okay|confirm|sure|place order|place my order|confirm order)$/i;
 const NO = /^(no|n|cancel|stop|nope)$/i;

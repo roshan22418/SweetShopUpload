@@ -1,10 +1,24 @@
-import { OrderStatus, PaymentMethod } from "@/types";
+import { FulfillmentType, OrderStatus, PaymentMethod } from "@/types";
 
 export const STATUS_STYLES: Record<OrderStatus, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800",
-  CONFIRMED: "bg-blue-100 text-blue-800",
-  COMPLETED: "bg-green-100 text-green-800",
+  PENDING: "bg-amber-100 text-amber-900",
+  CONFIRMED: "bg-sky-100 text-sky-900",
+  COMPLETED: "bg-emerald-100 text-emerald-900",
   CANCELLED: "bg-red-100 text-red-800",
+};
+
+/** What a customer reads instead of the raw enum. */
+export const STATUS_LABELS: Record<OrderStatus, string> = {
+  PENDING: "Received",
+  CONFIRMED: "Confirmed",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+
+export const FULFILLMENT_LABELS: Record<FulfillmentType, string> = {
+  DINE_IN: "Dine in",
+  TAKEAWAY: "Takeaway",
+  DELIVERY: "Delivery",
 };
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
