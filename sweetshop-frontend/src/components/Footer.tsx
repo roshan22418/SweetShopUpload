@@ -22,8 +22,16 @@ export default function Footer() {
           <p className="mb-2 text-sm font-semibold text-gold-light">Visit or contact us</p>
           <div className="flex flex-col gap-1 text-sm text-cream/60">
             {settings?.address && <p>📍 {settings.address}</p>}
-            {settings?.contactPhone && <p>📞 {settings.contactPhone}</p>}
-            {settings?.email && <p>✉️ {settings.email}</p>}
+            {settings?.contactPhone && (
+              <a href={`tel:${settings.contactPhone.replace(/[^\d+]/g, "")}`} className="hover:text-gold">
+                📞 {settings.contactPhone}
+              </a>
+            )}
+            {settings?.email && (
+              <a href={`mailto:${settings.email}`} className="break-words hover:text-gold">
+                ✉️ {settings.email}
+              </a>
+            )}
             {!settings?.address && !settings?.contactPhone && !settings?.email && (
               <p className="text-cream/40">Contact details coming soon.</p>
             )}
