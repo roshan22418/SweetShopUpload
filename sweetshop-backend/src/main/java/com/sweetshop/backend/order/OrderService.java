@@ -6,7 +6,8 @@ import com.sweetshop.backend.order.dto.CheckoutRequest;
 import com.sweetshop.backend.order.dto.OrderResponse;
 import com.sweetshop.backend.notification.OrderMessageFormatter;
 import com.sweetshop.backend.notification.OrderPlacedEvent;
-import com.sweetshop.backend.payment.RazorpayService;
+import com.sweetshop.backend.payment.PaymentService;
+import com.sweetshop.backend.payment.RazorpayPayment;
 import com.sweetshop.backend.product.Product;
 import com.sweetshop.backend.product.ProductRepository;
 import com.sweetshop.backend.user.UserRepository;
@@ -27,7 +28,7 @@ public class OrderService {
     private final CartItemRepository cartItemRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-    private final RazorpayService razorpayService;
+    private final PaymentService paymentService;
     private final ApplicationEventPublisher eventPublisher;
 
     public OrderService(
@@ -35,14 +36,14 @@ public class OrderService {
             CartItemRepository cartItemRepository,
             ProductRepository productRepository,
             UserRepository userRepository,
-            RazorpayService razorpayService,
+            PaymentService paymentService,
             ApplicationEventPublisher eventPublisher) {
         this.eventPublisher = eventPublisher;
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
         this.productRepository = productRepository;
         this.userRepository = userRepository;
-        this.razorpayService = razorpayService;
+        this.paymentService = paymentService;
     }
 
     @Transactional
@@ -54,18 +55,11 @@ public class OrderService {
 
         PaymentMethod paymentMethod = request.getPaymentMethod() != null ? request.getPaymentMethod() : PaymentMethod.COD;
 
-        if (paymentMethod == PaymentMethod.RAZORPAY) {
-            if (!StringUtils.hasText(request.getRazorpayOrderId())
-                    || !StringUtils.hasText(request.getRazorpayPaymentId())
-                    || !StringUtils.hasText(request.getRazorpaySignature())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment details are required for online payment");
-            }
-            boolean valid = razorpayService.verifySignature(
-                    request.getRazorpayOrderId(), request.getRazorpayPaymentId(), request.getRazorpaySignature());
-            if (!valid) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payment verification failed");
-            }
-        }
+        // Checked before touching stock or the cart; any later failure rolls the whole checkout back.
+        RazorpayPayment payment = paymentMethod == PaymentMethod.RAZORPAY
+                ? paymentService.claim(userId, request.getRazorpayOrderId(),
+                        request.getRazorpayPaymentId(), request.getRazorpaySignature())
+                : null;
 
         List<CartItem> cartItems = cartItemRepository.findByUserId(userId);
         if (cartItems.isEmpty()) {
@@ -115,6 +109,10 @@ public class OrderService {
 
         order.setTotalAmount(total);
         Order saved = orderRepository.save(order);
+
+        if (payment != null) {
+            paymentService.complete(payment, total, saved);
+        }
 
         cartItemRepository.deleteByUserId(userId);
 
