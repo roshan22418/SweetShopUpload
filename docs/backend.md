@@ -30,7 +30,7 @@ Once you've read one feature end-to-end (say, `category/`), you already know the
 Cross-cutting stuff lives in `com.sweetshop.backend.config`:
 - `SecurityConfig.java` — the single source of truth for which endpoints are public, which need any logged-in user, and which need `ADMIN`. **Read this file before adding a new endpoint** — a route not listed here falls through to `anyRequest().authenticated()`, which is usually what you want for anything customer-facing.
 - `WebConfig.java` — serves uploaded product images as static files.
-- `GlobalExceptionHandler.java` — turns `ResponseStatusException` and validation failures into consistent JSON error bodies (`{"status":400,"message":"..."}`), so the frontend never has to special-case error shapes per endpoint.
+- `GlobalExceptionHandler.java` — the **one** writer of API error bodies: `{"status":400,"message":"...","errors"?:{field: msg}}`. It extends `ResponseEntityExceptionHandler`, so Spring MVC's own errors (malformed JSON, a wrong enum value — reported as `Invalid value for 'fulfillmentType'` —, a non-numeric id, wrong method, unknown route, missing upload part) get the same shape and a readable message, and a catch-all turns anything unexpected into a generic `500` whose details only go to the log. `SecurityConfig` writes the same shape for `401`/`403`. The frontend can therefore always show `message`. (Spring Boot 4 ignores the old `server.error.include-message` property, so it was removed.) Covered by `ApiErrorsIntegrationTest` (MockMvc) and `ApiErrorsOverHttpTest` (real socket).
 
 ## Feature-by-feature
 

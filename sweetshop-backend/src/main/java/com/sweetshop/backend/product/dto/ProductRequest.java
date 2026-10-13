@@ -1,6 +1,7 @@
 package com.sweetshop.backend.product.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,6 +27,7 @@ public class ProductRequest {
 
     @NotNull(message = "Price is required")
     @DecimalMin(value = "0.0", inclusive = true, message = "Price must not be negative")
+    @Digits(integer = 8, fraction = 2, message = "Price must be at most 99999999.99 with up to 2 decimals")
     private BigDecimal price;
 
     @NotBlank(message = "Unit is required, e.g. '500g', '1 piece'")
