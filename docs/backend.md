@@ -51,6 +51,7 @@ Cross-cutting stuff lives in `com.sweetshop.backend.config`:
 
 ### `user` — profile & self-service account management
 - `GET /api/users/me`, `PUT /api/users/me` (name/phone only), `PUT /api/users/me/password` — all `authenticated()`, all scoped to the caller via `@AuthenticationPrincipal`, never take a user id from the URL.
+- `PUT /api/users/me/password` also **revokes every refresh token** of the user (`RefreshTokenService.revokeAll`), so all other devices are signed out once their ≤15-min access token expires; the frontend logs the current device straight back in with the new password.
 - **Email is intentionally not editable** here — it's the JWT subject and login identity; changing it would mean re-issuing tokens, which is out of scope for a simple profile edit.
 
 ### `category` — product categories

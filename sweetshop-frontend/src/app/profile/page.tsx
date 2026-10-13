@@ -9,7 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { formatDate } from "@/lib/format";
 
 export default function ProfilePage() {
-  const { user, loading, setUserFullName } = useAuth();
+  const { user, loading, setUserFullName, login } = useAuth();
   const router = useRouter();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -78,10 +78,12 @@ export default function ProfilePage() {
         method: "PUT",
         body: JSON.stringify({ currentPassword, newPassword }),
       });
+      // The backend signs out every session on a password change; sign this device straight back in.
+      await login(profile!.email, newPassword).catch(() => {});
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-      setPasswordSuccess("Password changed.");
+      setPasswordSuccess("Password changed. You've been signed out on all other devices.");
     } catch (err) {
       setPasswordError(err instanceof ApiError ? err.message : "Failed to change password.");
     } finally {

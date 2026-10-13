@@ -74,6 +74,12 @@ public class RefreshTokenService {
         return new Rotated(user, create(user));
     }
 
+    /** Signs the user out everywhere, e.g. after a password change. */
+    @Transactional
+    public void revokeAll(Long userId) {
+        repository.deleteAllByUserId(userId);
+    }
+
     /** Logout: drops this token if it exists; unknown/missing tokens are silently fine. */
     @Transactional
     public void revoke(String rawToken) {
