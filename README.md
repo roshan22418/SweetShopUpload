@@ -4,13 +4,15 @@ A full-stack e-commerce site for a real sweet shop — cakes, birthday orders, I
 
 ## Features
 
-- Browse products by category, with a fast client-side prefix search ("sa" finds "Samosa")
-- Cart with an Amazon-style `− N +` quantity stepper right on the product card
-- Checkout with a choice of **Cash/Pay at counter** or **online payment via Razorpay** (cards, UPI, netbanking, wallets)
-- Order history for customers, full order management for admins (status updates)
-- Product reviews — gated so a customer can only review something they actually bought
-- Admin panel: categories, products (with real image upload), orders, and shop settings (shop name is editable, not hardcoded)
-- Customer + admin profile pages (edit details, change password)
+- Browse products by category, with a fast client-side search ("sa" finds "Samosa", "chocolate cakes" finds "Chocolate Truffle Cake"), sorting and an in-stock filter
+- Cart with an Amazon-style `− N +` quantity stepper right on the product card; works for guests and merges into the account on login
+- Checkout with a choice of **Cash/Pay at counter** or **online payment via Razorpay** (cards, UPI, netbanking, wallets) — each payment is bound server-side to the customer and the exact cart total, and can pay for one order only
+- Stock is locked during checkout, so the last unit can never be sold twice; cancelling an order puts its stock back
+- Customer order pages: progress tracker, self-service cancel (pending pay-at-counter orders), "Order again", and a message thread with the shop that updates live
+- Product reviews — gated so a customer can only review something they actually bought; customers can edit/delete theirs, admins can moderate
+- Admin panel: an overview dashboard (today's orders and sales, orders waiting, low stock), live order queue with status actions that follow the fulfilment rules, products (image upload, search, low-stock filter), categories, and shop settings (shop name is editable, not hardcoded)
+- Customer + admin profile pages (edit details, change password — which signs out other devices)
+- Login brute-force protection, case-insensitive emails, consistent JSON errors, a mobile-first responsive UI and an ordering chatbot
 
 ## Tech stack
 
@@ -67,6 +69,16 @@ Environment variables the backend reads (all have local-dev defaults except Razo
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Online payment | optional — "Pay online now" is disabled without them |
 
 The frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8080`), baked in at **build time**.
+
+## Tests
+
+```bash
+cd sweetshop-backend && ./mvnw verify   # 68 tests; needs the Postgres from the setup above (DB_URL etc.)
+cd sweetshop-frontend && npm test       # unit tests for the pure helpers (vitest)
+npm run lint && npx tsc --noEmit && npm run build
+```
+
+The backend integration tests run against a real Postgres (the same one the app uses locally) and create their own uniquely named data, so they work on an empty or a used database. Razorpay is replaced by a local stub in tests. GitHub Actions (`.github/workflows/ci.yml`) runs all of the above on every push to `main` and every pull request, with a Postgres service container.
 
 ## First admin account
 
