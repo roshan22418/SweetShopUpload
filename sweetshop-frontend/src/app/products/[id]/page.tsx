@@ -1,14 +1,123 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { formatPrice } from "@/lib/format";
 import { apiFetch, ApiError, resolveImageUrl } from "@/lib/api";
-import { Product, ReviewSummary } from "@/types";
+import { formatDate, formatPrice } from "@/lib/format";
+import { Order, Product, Review, ReviewSummary } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { playPopSound } from "@/lib/sound";
 import QuantityStepper from "@/components/QuantityStepper";
+
+function Stars({ value, className = "text-gold" }: { value: number; className?: string }) {
+  const rounded = Math.round(value);
+  return (
+    <span className={className} aria-label={`${value} out of 5 stars`}>
+      {"★".repeat(rounded)}
+      <span className="text-gold-light">{"★".repeat(5 - rounded)}</span>
+    </span>
+  );
+}
+
+function StockLabel({ product }: { product: Product }) {
+  if (!product.isAvailable) return <p className="text-sm font-medium text-red-700">Currently unavailable</p>;
+  if (product.stockQuantity <= 0) return <p className="text-sm font-medium text-red-700">Out of stock</p>;
+  if (product.stockQuantity <= 5)
+    return <p className="text-sm font-medium text-plum">Only {product.stockQuantity} left — order soon</p>;
+  return (
+    <p className="flex items-center gap-1.5 text-sm text-emerald-800">
+      <span className="h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true" /> In stock
+    </p>
+  );
+}
+
+function ReviewForm({
+  productId,
+  existing,
+  onSaved,
+}: {
+  productId: string;
+  existing: Review | undefined;
+  onSaved: () => void;
+}) {
+  const [rating, setRating] = useState(existing?.rating ?? 5);
+  const [comment, setComment] = useState(existing?.comment ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      await apiFetch(`/api/products/${productId}/reviews`, {
+        method: "POST",
+        body: JSON.stringify({ rating, comment: comment.trim() || null }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save your review.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm("Delete your review?")) return;
+    setError(null);
+    setSaving(true);
+    try {
+      await apiFetch(`/api/products/${productId}/reviews`, { method: "DELETE" });
+      setRating(5);
+      setComment("");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete your review.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-gold-light/60 bg-cream/60 p-4">
+      <p className="mb-2 text-sm font-semibold text-ink">{existing ? "Your review" : "Leave a review"}</p>
+      {error && <p className="alert-error mb-2">{error}</p>}
+      <div role="radiogroup" aria-label="Your rating" className="mb-2 flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={rating === n}
+            aria-label={`${n} star${n === 1 ? "" : "s"}`}
+            onClick={() => setRating(n)}
+            className={`text-2xl leading-none transition hover:scale-110 ${n <= rating ? "text-gold" : "text-gold-light"}`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="What did you think? (optional)"
+        maxLength={1000}
+        className="field"
+        rows={3}
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button onClick={save} disabled={saving} className="btn-primary">
+          {saving ? "Saving..." : existing ? "Update review" : "Submit review"}
+        </button>
+        {existing && (
+          <button onClick={remove} disabled={saving} className="btn-danger">
+            Delete
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -18,26 +127,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [reviews, setReviews] = useState<ReviewSummary | null>(null);
+  const [hasOrdered, setHasOrdered] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState("");
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [submittingReview, setSubmittingReview] = useState(false);
+  const isCustomer = user?.role === "CUSTOMER";
+  const isAdmin = user?.role === "ADMIN";
 
-  function loadReviews() {
+  const loadReviews = useCallback(() => {
     apiFetch<ReviewSummary>(`/api/products/${id}/reviews`).then(setReviews).catch(() => {});
-  }
+  }, [id]);
 
   useEffect(() => {
     apiFetch<Product>(`/api/products/${id}`)
       .then(setProduct)
       .catch(() => setNotFound(true));
     loadReviews();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, loadReviews]);
+
+  // Reviews are limited to products the customer has ordered (enforced by the backend too), so the form
+  // only appears when it can actually be submitted.
+  useEffect(() => {
+    if (!isCustomer) return;
+    apiFetch<Order[]>("/api/orders")
+      .then((orders) => setHasOrdered(orders.some((o) => o.items.some((item) => item.productId === Number(id)))))
+      .catch(() => {});
+  }, [isCustomer, id]);
+
+  function flash(text: string) {
+    setMessage(text);
+    setTimeout(() => setMessage(null), 3000);
+  }
 
   async function handleAddToCart() {
     if (!product) return;
@@ -47,47 +168,33 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       playPopSound();
       setQuantity(1);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to add to cart.");
-      setTimeout(() => setMessage(null), 2500);
+      flash(err instanceof Error ? err.message : "Failed to add to cart.");
     } finally {
       setAdding(false);
     }
   }
 
-  async function handleIncrementInCart() {
+  async function changeCartQuantity(next: number, current: number) {
     if (!product) return;
     try {
-      await incrementItem(product);
-      playPopSound();
+      if (next > current) {
+        await incrementItem(product);
+        playPopSound();
+      } else {
+        await decrementItem(product.id);
+      }
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to update cart.");
-      setTimeout(() => setMessage(null), 2500);
+      flash(err instanceof Error ? err.message : "Failed to update cart.");
     }
   }
 
-  async function handleDecrementInCart() {
+  async function removeReviewAsAdmin(review: Review) {
+    if (!confirm(`Remove ${review.userName}'s review?`)) return;
     try {
-      await decrementItem(Number(id));
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to update cart.");
-      setTimeout(() => setMessage(null), 2500);
-    }
-  }
-
-  async function handleSubmitReview() {
-    setReviewError(null);
-    setSubmittingReview(true);
-    try {
-      await apiFetch(`/api/products/${id}/reviews`, {
-        method: "POST",
-        body: JSON.stringify({ rating, comment }),
-      });
-      setComment("");
+      await apiFetch(`/api/reviews/${review.id}`, { method: "DELETE" });
       loadReviews();
     } catch (err) {
-      setReviewError(err instanceof ApiError ? err.message : "Failed to submit review.");
-    } finally {
-      setSubmittingReview(false);
+      flash(err instanceof ApiError ? err.message : "Failed to remove the review.");
     }
   }
 
@@ -95,12 +202,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     return (
       <div className="mx-auto max-w-md py-20 text-center">
         <p className="text-5xl">🍰</p>
-        <h1 className="mt-4 text-xl font-semibold text-gray-900">Product not found</h1>
-        <p className="mt-2 text-gray-500">
-          This item isn&apos;t available anymore — it may have been removed from sale.
-        </p>
-        <Link href="/" className="mt-4 inline-block rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
-          Browse products
+        <h1 className="page-title mt-4">Product not found</h1>
+        <p className="mt-2 text-charcoal/60">This item isn&apos;t available anymore — it may have been removed from sale.</p>
+        <Link href="/" className="btn-primary mt-6">
+          Browse the menu
         </Link>
       </div>
     );
@@ -108,158 +213,169 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   if (!product) {
     return (
-      <div className="flex justify-center py-20 text-gray-400">
-        <svg className="h-6 w-6 animate-spin" viewBox="0 0 24 24" fill="none">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-        </svg>
+      <div className="mx-auto grid max-w-5xl animate-pulse grid-cols-1 gap-10 md:grid-cols-2" aria-busy="true">
+        <div className="aspect-[4/3] rounded-2xl bg-gold-light/30" />
+        <div className="space-y-4 pt-4">
+          <div className="h-3 w-24 rounded bg-gold-light/40" />
+          <div className="h-8 w-2/3 rounded bg-gold-light/40" />
+          <div className="h-4 w-full rounded bg-gold-light/30" />
+          <div className="h-8 w-32 rounded bg-gold-light/40" />
+        </div>
       </div>
     );
   }
 
-  const subtotal = formatPrice(product.price * quantity);
   const qtyInCart = getQuantity(product.id);
+  const canBuy = product.isAvailable && product.stockQuantity > 0;
+  const ownReview = reviews?.reviews.find((r) => r.userId === user?.userId);
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="grid grid-cols-1 gap-10 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:grid-cols-2 md:p-8">
+    <div className="mx-auto max-w-5xl">
+      <nav aria-label="Breadcrumb" className="mb-5 text-sm text-charcoal/60">
+        <Link href="/" className="hover:text-plum">
+          Home
+        </Link>
+        <span className="mx-2">/</span>
+        <span>{product.categoryName}</span>
+        <span className="mx-2">/</span>
+        <span className="text-ink">{product.name}</span>
+      </nav>
+
+      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 md:gap-12">
         {product.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={resolveImageUrl(product.imageUrl)}
             alt={product.name}
-            className="h-72 w-full rounded-xl object-cover shadow-md md:h-80"
+            className="aspect-[4/3] w-full rounded-2xl object-cover shadow-sm"
           />
         ) : (
-          <div className="flex h-72 items-center justify-center rounded-xl bg-amber-50 text-7xl md:h-80">
-            🍰
-          </div>
+          <div className="flex aspect-[4/3] items-center justify-center rounded-2xl bg-gold-light/25 text-8xl">🍰</div>
         )}
 
         <div className="flex flex-col">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">{product.categoryName}</p>
-          <h1 className="mt-1 text-3xl font-bold text-gray-900">{product.name}</h1>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-plum">{product.categoryName}</p>
+          <h1 className="mt-2 font-display text-3xl font-medium tracking-tight text-ink sm:text-4xl">{product.name}</h1>
           {reviews && reviews.reviewCount > 0 && (
-            <p className="mt-2 text-sm text-amber-700">
-              ★ {reviews.averageRating} ({reviews.reviewCount} review{reviews.reviewCount === 1 ? "" : "s"})
-            </p>
+            <a href="#reviews" className="mt-2 flex items-center gap-2 text-sm text-charcoal/70 hover:text-plum">
+              <Stars value={reviews.averageRating} />
+              {reviews.averageRating.toFixed(1)} · {reviews.reviewCount} review{reviews.reviewCount === 1 ? "" : "s"}
+            </a>
           )}
-          <p className="mt-3 leading-relaxed text-gray-600">{product.description}</p>
+          {product.description && <p className="mt-4 leading-relaxed text-charcoal/75">{product.description}</p>}
 
-          <div className="mt-5 flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-amber-900">{formatPrice(product.price)}</span>
-            <span className="text-sm text-gray-500">/ {product.unit}</span>
+          <div className="mt-6 flex items-baseline gap-2">
+            <span className="font-display text-3xl font-medium text-ink">{formatPrice(product.price)}</span>
+            <span className="text-sm text-charcoal/60">/ {product.unit}</span>
+          </div>
+          <div className="mt-1">
+            <StockLabel product={product} />
           </div>
 
-          {!product.isAvailable ? (
-            <p className="mt-1 text-sm font-medium text-red-600">Currently unavailable</p>
-          ) : product.stockQuantity <= 0 ? (
-            <p className="mt-1 text-sm font-medium text-red-600">Out of stock</p>
-          ) : (
-            <p className="mt-1 text-sm text-gray-500">{product.stockQuantity} in stock</p>
-          )}
+          <div className="mt-6 border-t border-gold-light/60 pt-6">
+            {message && <p className="alert-error mb-4">{message}</p>}
 
-          <div className="mt-auto pt-6">
-            {message && (
-              <div className="mb-4 rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
-                {message}
-              </div>
-            )}
-
-            {qtyInCart > 0 ? (
-              <div className="flex items-center gap-4">
+            {isAdmin ? (
+              <Link href="/admin/products" className="btn-secondary">
+                Edit in admin
+              </Link>
+            ) : qtyInCart > 0 ? (
+              <div className="flex flex-wrap items-center gap-4">
                 <QuantityStepper
                   value={qtyInCart}
                   min={0}
                   max={product.stockQuantity}
-                  onChange={(next) =>
-                    next > qtyInCart ? handleIncrementInCart() : handleDecrementInCart()
-                  }
+                  onChange={(next) => changeCartQuantity(next, qtyInCart)}
+                  label={`Quantity of ${product.name} in your cart`}
                 />
-                <span className="text-sm font-medium text-green-700">
+                <span className="text-sm font-medium text-emerald-800">
                   ✓ In your cart · {formatPrice(product.price * qtyInCart)}
                 </span>
+                <Link href="/cart" className="text-sm font-medium text-plum hover:underline">
+                  View cart →
+                </Link>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <QuantityStepper
                   value={quantity}
                   onChange={setQuantity}
                   max={product.stockQuantity}
-                  disabled={!product.isAvailable || product.stockQuantity <= 0}
+                  disabled={!canBuy}
+                  label={`Quantity of ${product.name}`}
                 />
-                <button
-                  disabled={!product.isAvailable || product.stockQuantity <= 0 || adding}
-                  onClick={handleAddToCart}
-                  className="flex-1 rounded-md bg-amber-600 px-6 py-2.5 font-medium text-white shadow-sm transition hover:bg-amber-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
-                >
+                <button disabled={!canBuy || adding} onClick={handleAddToCart} className="btn-primary flex-1 py-2.5 sm:flex-none sm:px-8">
                   {!product.isAvailable
                     ? "Unavailable"
                     : product.stockQuantity <= 0
-                      ? "Out of Stock"
+                      ? "Out of stock"
                       : adding
                         ? "Adding..."
-                        : `Add to Cart · ${subtotal}`}
+                        : `Add to cart · ${formatPrice(product.price * quantity)}`}
                 </button>
               </div>
             )}
+
+            <ul className="mt-6 flex flex-wrap gap-2 text-xs text-charcoal/70">
+              <li className="rounded-full border border-gold-light/70 px-3 py-1">Dine-in · Takeaway · Delivery</li>
+              <li className="rounded-full border border-gold-light/70 px-3 py-1">Pay online or at the counter</li>
+            </ul>
           </div>
         </div>
       </div>
 
-      <section className="mt-10 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm md:p-8">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Reviews</h2>
-
-        {user && (
-          <div className="mb-6 rounded-lg border border-gray-200 bg-amber-50/40 p-4">
-            <p className="mb-2 text-sm font-medium text-gray-700">Leave a review</p>
-            {reviewError && <p className="mb-2 text-sm text-red-600">{reviewError}</p>}
-            <div className="mb-2 flex items-center gap-2">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setRating(n)}
-                  className={`text-2xl transition hover:scale-110 ${n <= rating ? "text-amber-500" : "text-gray-300"}`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              placeholder="Optional comment"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-              rows={2}
-            />
-            <button
-              onClick={handleSubmitReview}
-              disabled={submittingReview}
-              className="mt-2 rounded-md bg-amber-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {submittingReview ? "Submitting..." : "Submit Review"}
-            </button>
-            <p className="mt-1 text-xs text-gray-400">
-              You can only review products you&apos;ve ordered.
+      <section id="reviews" className="card mt-12 scroll-mt-24 md:p-8">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <h2 className="section-title text-xl">Reviews</h2>
+          {reviews && reviews.reviewCount > 0 && (
+            <p className="flex items-center gap-2 text-sm text-charcoal/70">
+              <span className="font-display text-2xl text-ink">{reviews.averageRating.toFixed(1)}</span>
+              <Stars value={reviews.averageRating} />
+              <span>({reviews.reviewCount})</span>
             </p>
-          </div>
+          )}
+        </div>
+
+        {isCustomer &&
+          (hasOrdered || ownReview ? (
+            <ReviewForm key={ownReview?.id ?? "new"} productId={id} existing={ownReview} onSaved={loadReviews} />
+          ) : (
+            <p className="mb-6 rounded-lg bg-gold-light/25 px-4 py-3 text-sm text-charcoal/70">
+              Ordered this before? Reviews open up once it&apos;s in one of your orders.
+            </p>
+          ))}
+        {!user && (
+          <p className="mb-6 text-sm text-charcoal/60">
+            <Link href={`/login?redirect=/products/${id}`} className="font-medium text-plum hover:underline">
+              Log in
+            </Link>{" "}
+            to review products you&apos;ve ordered.
+          </p>
         )}
 
         {reviews && reviews.reviews.length > 0 ? (
-          <div className="flex flex-col gap-4">
+          <ul className="divide-y divide-gold-light/50">
             {reviews.reviews.map((r) => (
-              <div key={r.id} className="border-b border-gray-100 pb-3 last:border-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-amber-500">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</span>
-                  <span className="text-sm font-medium text-gray-800">{r.userName}</span>
+              <li key={r.id} className="py-4 first:pt-0 last:pb-0">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Stars value={r.rating} />
+                  <span className="text-sm font-medium text-ink">
+                    {r.userName}
+                    {r.userId === user?.userId && <span className="ml-1.5 text-xs font-normal text-plum">(you)</span>}
+                  </span>
+                  <span className="text-xs text-charcoal/50">{formatDate(r.createdAt)}</span>
+                  {isAdmin && (
+                    <button onClick={() => removeReviewAsAdmin(r)} className="ml-auto text-xs font-medium text-red-700 hover:underline">
+                      Remove
+                    </button>
+                  )}
                 </div>
-                {r.comment && <p className="mt-1 text-sm text-gray-600">{r.comment}</p>}
-              </div>
+                {r.comment && <p className="mt-1.5 text-sm leading-relaxed text-charcoal/75">{r.comment}</p>}
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
-          <p className="text-sm text-gray-500">No reviews yet.</p>
+          <p className="text-sm text-charcoal/60">No reviews yet.</p>
         )}
       </section>
     </div>
