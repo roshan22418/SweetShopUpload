@@ -60,6 +60,8 @@ function guestCartToCart(entries: GuestCartEntry[]): Cart {
 
 interface CartContextValue {
   cart: Cart | null;
+  /** True while a logged-in user's cart hasn't arrived yet (so "empty" isn't shown prematurely). */
+  cartLoading: boolean;
   itemCount: number;
   refreshCart: () => Promise<Cart | null>;
   getQuantity: (productId: number) => number;
@@ -81,6 +83,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // The server cart is remembered together with whose it is, so a different account never sees it.
   const [serverCart, setServerCart] = useState<{ userId: number; cart: Cart | null } | null>(null);
   const cart = userId === null ? guestCart : serverCart?.userId === userId ? serverCart.cart : null;
+  const cartLoading = userId !== null && serverCart?.userId !== userId;
 
   const refreshCart = useCallback(async () => {
     if (userId === null) return guestCartToCart(readGuestCart());
@@ -180,7 +183,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ cart, itemCount, refreshCart, getQuantity, incrementItem, decrementItem, setQuantity, removeItem }}
+      value={{ cart, cartLoading, itemCount, refreshCart, getQuantity, incrementItem, decrementItem, setQuantity, removeItem }}
     >
       {children}
     </CartContext.Provider>
