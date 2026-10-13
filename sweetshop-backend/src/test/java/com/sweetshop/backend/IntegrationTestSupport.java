@@ -60,6 +60,8 @@ public abstract class IntegrationTestSupport {
         registry.add("razorpay.key-id", () -> "rzp_test_integration");
         registry.add("razorpay.key-secret", () -> RAZORPAY_TEST_SECRET);
         registry.add("razorpay.api-base", () -> "http://127.0.0.1:" + RAZORPAY_STUB.getAddress().getPort());
+        // lets tests count the SQL statements a request runs (see QueryCountIntegrationTest)
+        registry.add("spring.jpa.properties.hibernate.generate_statistics", () -> "true");
     }
 
     private static HttpServer startRazorpayStub() {

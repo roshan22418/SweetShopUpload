@@ -105,6 +105,10 @@ This is the most involved service — `OrderService.checkout()` is the one metho
 ### `settings` — shop identity
 - Single-row table (`shop_settings`), always the first row, seeded via migration with the shop name `KING CAKE PLACE`. `GET /api/shop-settings` is public (the storefront's navbar needs it for logged-out visitors too); `PUT` is `ADMIN`-only. This is what makes the shop's name/branding editable without a code change or redeploy.
 
+## Query performance
+
+List endpoints fetch what their response DTOs need in the **same** query via `@EntityGraph` on the repository finder (orders → customer + items, products → category, cart lines → product, reviews → author, order messages → sender), so their SQL count stays constant instead of growing with the number of rows (`QueryCountIntegrationTest` pins this: e.g. `GET /api/orders/all` went from 236 statements to 2 on the test database). Catalog lists are ordered by name, categories too. When you add a list endpoint whose DTO touches a lazy association, add an entity graph and a line to that test. One deliberate exception: checkout's `CartItemRepository.findByUserId` does **not** fetch products, so the `SELECT … FOR UPDATE` that follows reads fresh stock rather than an entity already cached in the persistence context. SQL logging is off unless `JPA_SHOW_SQL=true`.
+
 ## Adding a new endpoint — the checklist
 
 1. Add the DTO(s) in the feature's `dto/` package, `@Valid`-annotate the request.
