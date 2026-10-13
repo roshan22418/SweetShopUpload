@@ -60,77 +60,77 @@ export default function AdminSettingsPage() {
     }
   }
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loading) return <div className="card h-64 max-w-lg animate-pulse bg-gold-light/20" aria-busy="true" />;
 
   return (
-    <div className="max-w-lg">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-gray-200 p-4">
-        <h2 className="font-semibold text-gray-900">Shop Settings</h2>
-        {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-        {success && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p>}
+    <div className="max-w-2xl">
+      <form onSubmit={handleSubmit} className="card flex flex-col gap-4">
+        <h2 className="section-title">Shop settings</h2>
+        {error && <p className="alert-error">{error}</p>}
+        {success && <p className="alert-success">{success}</p>}
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Shop name</label>
-          <input
+          <label htmlFor="s-shopName" className="field-label">Shop name</label>
+          <input id="s-shopName"
             required
             value={form.shopName}
             onChange={(e) => setForm({ ...form, shopName: e.target.value })}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Description <span className="text-gray-400">(optional)</span>
+          <label htmlFor="s-description" className="field-label">
+            Description <span className="text-charcoal/40">(optional)</span>
           </label>
-          <textarea
+          <textarea id="s-description"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={3}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Contact phone <span className="text-gray-400">(optional)</span>
+          <label htmlFor="s-contactPhone" className="field-label">
+            Contact phone <span className="text-charcoal/40">(optional)</span>
           </label>
-          <input
+          <input id="s-contactPhone"
             value={form.contactPhone}
             onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Address <span className="text-gray-400">(optional)</span>
+          <label htmlFor="s-address" className="field-label">
+            Address <span className="text-charcoal/40">(optional)</span>
           </label>
-          <textarea
+          <textarea id="s-address"
             value={form.address}
             onChange={(e) => setForm({ ...form, address: e.target.value })}
             rows={2}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">
-            Contact email <span className="text-gray-400">(optional)</span>
+          <label htmlFor="s-email" className="field-label">
+            Contact email <span className="text-charcoal/40">(optional)</span>
           </label>
-          <input
+          <input id="s-email"
             type="email"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="hello@yourshop.com"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:outline-none"
+            className="field"
           />
         </div>
 
         <button
           type="submit"
           disabled={submitting}
-          className="self-start rounded-md bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+          className="btn-primary self-start"
         >
           {submitting ? "Saving..." : "Save"}
         </button>
