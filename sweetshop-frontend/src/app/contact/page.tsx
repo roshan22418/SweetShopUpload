@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { ShopSettings } from "@/types";
 
@@ -44,7 +45,7 @@ export default function ContactPage() {
 
       <p className="mt-6 text-sm text-gray-500">
         Already placed an order? The fastest way to reach us about it is the message thread on your{" "}
-        <a href="/orders" className="text-amber-700 hover:underline">order&apos;s page</a> — we&apos;ll see it right away.
+        <Link href="/orders" className="text-amber-700 hover:underline">order&apos;s page</Link> — we&apos;ll see it right away.
       </p>
     </div>
   );

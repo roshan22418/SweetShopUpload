@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, ReactNode } from "react";
 import { apiFetch, AUTH_STORAGE_KEY as STORAGE_KEY, AUTH_UPDATED_EVENT, AUTH_CLEARED_EVENT } from "@/lib/api";
 import { AuthResponse } from "@/types";
 
@@ -16,87 +16,108 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// The session lives in localStorage; React reads it as an external store. Every writer (this file and
+// api.ts's silent refresh) fires one of these events, and the browser's "storage" event covers other tabs —
+// so logging in or out in one tab updates every open tab.
+function subscribe(onChange: () => void) {
+  window.addEventListener(AUTH_UPDATED_EVENT, onChange);
+  window.addEventListener(AUTH_CLEARED_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(AUTH_UPDATED_EVENT, onChange);
+    window.removeEventListener(AUTH_CLEARED_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+const readSession = () => localStorage.getItem(STORAGE_KEY);
+const noSessionOnServer = () => null;
+
+// false during server render and hydration, true afterwards — that's what `loading` means: until the
+// browser's storage has been read, "no user" doesn't yet mean "logged out".
+const subscribeNever = () => () => {};
+const onClient = () => true;
+const onServer = () => false;
+
+function parseSession(raw: string | null): AuthResponse | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthResponse;
+  } catch {
+    return null;
+  }
+}
+
+// Set when a login/register happens in *this* tab. Other tabs learn about the session too (storage
+// event), but only the tab that logged in may move its guest cart into the account — otherwise every
+// open tab would merge the same guest cart and multiply its quantities.
+let freshLoginUserId: number | null = null;
+
+/** True exactly once, in the tab where {@code userId} just logged in. */
+export function consumeFreshLogin(userId: number): boolean {
+  if (freshLoginUserId !== userId) return false;
+  freshLoginUserId = null;
+  return true;
+}
+
+function startSession(auth: AuthResponse) {
+  freshLoginUserId = auth.userId;
+  writeSession(auth);
+}
+
+function writeSession(auth: AuthResponse | null) {
+  if (auth) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
+    window.dispatchEvent(new CustomEvent(AUTH_UPDATED_EVENT, { detail: auth }));
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
+    window.dispatchEvent(new Event(AUTH_CLEARED_EVENT));
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const raw = useSyncExternalStore(subscribe, readSession, noSessionOnServer);
+  const hydrated = useSyncExternalStore(subscribeNever, onClient, onServer);
+  const user = useMemo(() => parseSession(raw), [raw]);
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        setUser(JSON.parse(raw));
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    }
-    setLoading(false);
-
-    // api.ts silently refreshes the access token (or gives up when the refresh token is dead);
-    // mirror either outcome into React state so the UI reacts.
-    function onUpdated(e: Event) {
-      setUser((e as CustomEvent<AuthResponse>).detail);
-    }
-    function onCleared() {
-      setUser(null);
-    }
-    window.addEventListener(AUTH_UPDATED_EVENT, onUpdated);
-    window.addEventListener(AUTH_CLEARED_EVENT, onCleared);
-    return () => {
-      window.removeEventListener(AUTH_UPDATED_EVENT, onUpdated);
-      window.removeEventListener(AUTH_CLEARED_EVENT, onCleared);
-    };
+  const login = useCallback(async (email: string, password: string) => {
+    startSession(
+      await apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })
+    );
   }, []);
 
-  function persist(auth: AuthResponse) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
-    setUser(auth);
-  }
+  const register = useCallback(async (fullName: string, email: string, password: string, phoneNumber?: string) => {
+    startSession(
+      await apiFetch<AuthResponse>("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ fullName, email, password, phoneNumber }),
+      })
+    );
+  }, []);
 
-  async function login(email: string, password: string) {
-    const auth = await apiFetch<AuthResponse>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    persist(auth);
-  }
+  const loginWithGoogle = useCallback(async (idToken: string) => {
+    startSession(
+      await apiFetch<AuthResponse>("/api/auth/google", { method: "POST", body: JSON.stringify({ idToken }) })
+    );
+  }, []);
 
-  async function register(fullName: string, email: string, password: string, phoneNumber?: string) {
-    const auth = await apiFetch<AuthResponse>("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ fullName, email, password, phoneNumber }),
-    });
-    persist(auth);
-  }
-
-  async function loginWithGoogle(idToken: string) {
-    const auth = await apiFetch<AuthResponse>("/api/auth/google", {
-      method: "POST",
-      body: JSON.stringify({ idToken }),
-    });
-    persist(auth);
-  }
-
-  function logout() {
+  const logout = useCallback(() => {
     // Revoke the refresh token server-side (best effort — we log out locally regardless)
     apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-    localStorage.removeItem(STORAGE_KEY);
-    setUser(null);
-  }
+    writeSession(null);
+  }, []);
 
-  function setUserFullName(fullName: string) {
-    setUser((prev) => {
-      if (!prev) return prev;
-      const updated = { ...prev, fullName };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }
+  const setUserFullName = useCallback((fullName: string) => {
+    const current = parseSession(readSession());
+    if (current) writeSession({ ...current, fullName });
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, register, loginWithGoogle, logout, setUserFullName }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading: !hydrated, login, register, loginWithGoogle, logout, setUserFullName }),
+    [user, hydrated, login, register, loginWithGoogle, logout, setUserFullName]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

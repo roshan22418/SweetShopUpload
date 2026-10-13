@@ -150,10 +150,11 @@ export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [featured, setFeatured] = useState<Product[]>([]);
   const [ratings, setRatings] = useState<Record<number, ReviewSummary>>({});
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  // Results are remembered with the request they answer, so a slow response for an old category can
+  // never overwrite the current one, and "loading" is simply "the current request hasn't answered yet".
+  const [listing, setListing] = useState<{ path: string; products: Product[] } | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const listingRef = useRef<HTMLDivElement>(null);
@@ -186,19 +187,30 @@ export default function HomePage() {
     });
   }, [featured]);
 
+  // Browsing by category tile, no search: nothing to fetch until a category is picked. Searching filters
+  // client-side, so typing doesn't refetch — only switching category does.
+  const listingPath =
+    selectedCategoryId !== null
+      ? `/api/products?categoryId=${selectedCategoryId}`
+      : searchQuery.trim()
+        ? "/api/products"
+        : null;
+
   useEffect(() => {
-    // Browsing by category tile, no search: don't fetch anything until a category is picked.
-    if (selectedCategoryId === null && !searchQuery) {
-      setProducts([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const path = selectedCategoryId ? `/api/products?categoryId=${selectedCategoryId}` : "/api/products";
-    apiFetch<Product[]>(path)
-      .then(setProducts)
-      .finally(() => setLoading(false));
-  }, [selectedCategoryId, searchQuery]);
+    if (!listingPath) return;
+    let cancelled = false;
+    apiFetch<Product[]>(listingPath)
+      .catch(() => [] as Product[])
+      .then((products) => {
+        if (!cancelled) setListing({ path: listingPath, products });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listingPath]);
+
+  const loading = listingPath !== null && listing?.path !== listingPath;
+  const products = listing?.path === listingPath ? listing.products : [];
 
   const showingCategoryOrSearch = selectedCategoryId !== null || searchQuery.trim() !== "";
 
