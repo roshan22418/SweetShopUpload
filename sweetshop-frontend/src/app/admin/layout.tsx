@@ -6,9 +6,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 const TABS = [
-  { href: "/admin/categories", label: "Categories" },
-  { href: "/admin/products", label: "Products" },
+  { href: "/admin", label: "Overview" },
   { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/products", label: "Products" },
+  { href: "/admin/categories", label: "Categories" },
   { href: "/admin/settings", label: "Settings" },
 ];
 
@@ -25,24 +26,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (loading || !user || user.role !== "ADMIN") return null;
 
+  const isActive = (href: string) => (href === "/admin" ? pathname === "/admin" : pathname.startsWith(href));
+
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold text-amber-900">Admin</h1>
-      <div className="mb-6 flex gap-2 border-b border-gray-200">
-        {TABS.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className={`px-4 py-2 text-sm font-medium ${
-              pathname === tab.href
-                ? "border-b-2 border-amber-600 text-amber-800"
-                : "text-gray-500 hover:text-gray-800"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </div>
+      <h1 className="page-title mb-4">Shop admin</h1>
+      {/* Scrolls sideways on phones instead of pushing the page wider than the screen */}
+      <nav aria-label="Admin sections" className="-mx-4 mb-6 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max gap-1 border-b border-gold-light/70">
+          {TABS.map((tab) => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={isActive(tab.href) ? "page" : undefined}
+              className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition ${
+                isActive(tab.href) ? "border-gold text-ink" : "border-transparent text-charcoal/60 hover:text-ink"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+      </nav>
       {children}
     </div>
   );
