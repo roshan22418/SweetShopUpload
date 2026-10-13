@@ -43,7 +43,8 @@ class AuthServiceGoogleLoginTest {
         when(refreshTokenService.create(any(User.class))).thenReturn("raw-refresh-token");
 
         authService = new AuthService(userRepository, new BCryptPasswordEncoder(), jwtService,
-                mock(AuthenticationManager.class), refreshTokenService, googleVerifier);
+                mock(AuthenticationManager.class), refreshTokenService, googleVerifier,
+                new LoginAttemptService(5, 15));
     }
 
     private GoogleLoginRequest request() {

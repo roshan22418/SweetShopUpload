@@ -26,6 +26,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
     private final GoogleTokenVerifier googleTokenVerifier;
+    private final LoginAttemptService loginAttempts;
 
     public AuthService(
             UserRepository userRepository,
@@ -33,8 +34,10 @@ public class AuthService {
             JwtService jwtService,
             AuthenticationManager authenticationManager,
             RefreshTokenService refreshTokenService,
-            GoogleTokenVerifier googleTokenVerifier) {
+            GoogleTokenVerifier googleTokenVerifier,
+            LoginAttemptService loginAttempts) {
         this.googleTokenVerifier = googleTokenVerifier;
+        this.loginAttempts = loginAttempts;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -63,11 +66,14 @@ public class AuthService {
 
     public AuthResult login(LoginRequest request) {
         String email = UserRepository.normalizeEmail(request.getEmail());
+        loginAttempts.checkAllowed(email);
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, request.getPassword()));
         } catch (BadCredentialsException e) {
+            loginAttempts.recordFailure(email);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
+        loginAttempts.recordSuccess(email);
 
         User user = userRepository.findByLoginEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));

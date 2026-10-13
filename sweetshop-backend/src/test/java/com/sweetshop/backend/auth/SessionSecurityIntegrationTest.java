@@ -72,4 +72,23 @@ class SessionSecurityIntegrationTest extends IntegrationTestSupport {
         assertThat(refreshWith(refreshCookie(first)).getResponse().getStatus())
                 .as("theft detection revokes the whole family").isEqualTo(401);
     }
+
+    @Test
+    void repeatedWrongPasswordsLockTheAccountTemporarily() throws Exception {
+        String email = unique("brute") + "@example.test";
+        register(email);
+        for (int i = 0; i < 5; i++) {
+            assertThat(postAs(null, "/api/auth/login", json("email", email, "password", "guess-" + i))
+                    .getResponse().getStatus()).isEqualTo(401);
+        }
+
+        MvcResult locked = postAs(null, "/api/auth/login", json("email", email, "password", "password123"));
+
+        assertThat(locked.getResponse().getStatus()).as("even the right password waits out the lockout").isEqualTo(429);
+        assertThat(body(locked).get("message").asString()).contains("Too many failed login attempts");
+        String other = unique("innocent") + "@example.test";
+        register(other);
+        assertThat(postAs(null, "/api/auth/login", json("email", other, "password", "password123"))
+                .getResponse().getStatus()).as("other accounts are unaffected").isEqualTo(200);
+    }
 }
