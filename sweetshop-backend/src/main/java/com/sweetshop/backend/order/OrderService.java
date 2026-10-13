@@ -4,6 +4,7 @@ import com.sweetshop.backend.cart.CartItem;
 import com.sweetshop.backend.cart.CartItemRepository;
 import com.sweetshop.backend.order.dto.CheckoutRequest;
 import com.sweetshop.backend.order.dto.OrderResponse;
+import com.sweetshop.backend.notification.OrderCancelledEvent;
 import com.sweetshop.backend.notification.OrderMessageFormatter;
 import com.sweetshop.backend.notification.OrderPlacedEvent;
 import com.sweetshop.backend.payment.PaymentService;
@@ -158,8 +159,56 @@ public class OrderService {
     @Transactional
     public OrderResponse updateStatus(Long orderId, OrderStatus newStatus) {
         Order order = findEntityById(orderId);
+        if (order.getStatus() == newStatus) {
+            return OrderResponse.from(order);
+        }
+        if (!order.getStatus().canTransitionTo(newStatus)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Order #" + orderId + " is " + order.getStatus() + " and can't be changed to " + newStatus);
+        }
+        if (newStatus == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
         order.setStatus(newStatus);
         return OrderResponse.from(orderRepository.save(order));
+    }
+
+    /**
+     * Self-service cancel, only while the shop hasn't confirmed the order yet. Online-paid orders need a
+     * refund, so those go through the shop (order messages / contact page) instead.
+     */
+    @Transactional
+    public OrderResponse cancelByCustomer(Long orderId, Long customerId) {
+        Order order = findEntityById(orderId);
+        if (!order.getUser().getId().equals(customerId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found");
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This order is already " + order.getStatus().name().toLowerCase()
+                            + " — please message the shop if you need to change it");
+        }
+        if (order.getPaymentMethod() == PaymentMethod.RAZORPAY) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This order was paid online — please message the shop to cancel it and arrange your refund");
+        }
+
+        restoreStock(order);
+        order.setStatus(OrderStatus.CANCELLED);
+        Order saved = orderRepository.save(order);
+        eventPublisher.publishEvent(new OrderCancelledEvent(saved.getId(), OrderMessageFormatter.cancelledByCustomer(saved)));
+        return OrderResponse.from(saved);
+    }
+
+    // Same lock order as checkout (product id), so a cancel and a checkout can't deadlock.
+    private void restoreStock(Order order) {
+        order.getItems().stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .forEach(item -> {
+                    Product product = productRepository.findByIdForUpdate(item.getProduct().getId()).orElseThrow();
+                    product.setStockQuantity(product.getStockQuantity() + item.getQuantity());
+                    productRepository.save(product);
+                });
     }
 
     private Order findEntityById(Long orderId) {
